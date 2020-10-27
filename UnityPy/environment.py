@@ -1,174 +1,178 @@
 import io
 import os
-import ntpath
-import re
-from typing import List, Callable, Dict, Union
+from collections import Counter
+from collections.abc import Callable
 from zipfile import ZipFile
 
-from fsspec import AbstractFileSystem
-from fsspec.implementations.local import LocalFileSystem
-
-
-from .files import File, ObjectReader, SerializedFile
+from . import files
 from .enums import FileType
 from .helpers import ImportHelper
-from .streams import EndianBinaryReader
 
-reSplit = re.compile(r"(.*?([^\/\\]+?))\.split\d+")
+"""
+ Number of dirs to ignore:
+ e.g. IGNOR_DIR_COUNT = 2 will reduce
+ 'assets/assetbundles/images/story_picture/small/15.png'
+ to
+ 'images/story_picture/small/15.png'
+"""
+IGNORE_DIR_COUNT = 0
+DEFAULT_TYPES = ['MonoBehaviour', 'Texture2D', 'TextAsset']
 
+def default_progress(skip_progress):
+    return skip_progress
 
 class Environment:
     files: dict
-    cabs: dict
+    resources: dict
+    container: dict
+    assets: dict
     path: str
-    local_files: List[str]
-    local_files_simple: List[str]
 
-    def __init__(self, *args, fs: AbstractFileSystem = None):
+    def __init__(self, *args):
         self.files = {}
-        self.cabs = {}
-        self.path = None
-        self.fs = fs or LocalFileSystem()
-        self.local_files = []
-        self.local_files_simple = []
+        self.container = {}
+        self.assets = {}
+        self.resources = {}
+        self.path = "."
+        self.out_path = os.path.join(os.getcwd(), "output")
+        self.ignore_dir_lvls = IGNORE_DIR_COUNT
+        self.progress_function = default_progress
 
         if args:
             for arg in args:
                 if isinstance(arg, str):
-                    if self.fs.isfile(arg):
-                        if ntpath.splitext(arg)[-1] in [".apk", ".zip"]:
+                    if os.path.isfile(arg):
+                        if os.path.splitext(arg)[-1] in [".apk", ".zip"]:
                             self.load_zip_file(arg)
                         else:
-                            self.path = ntpath.dirname(arg)
-                            if reSplit.match(arg):
-                                self.load_files([arg])
-                            else:
-                                self.load_file(arg)
-                    elif self.fs.isdir(arg):
+                            self.path = os.path.dirname(arg)
+                            self.load_file(arg)
+                    elif os.path.isdir(arg):
                         self.path = arg
                         self.load_folder(arg)
                 else:
                     self.path = None
-                    self.load_file(file=arg)
+                    self.load_file(data=arg)
 
         if len(self.files) == 1:
             self.file = list(self.files.values())[0]
 
-        if self.path == "":
-            self.path = os.getcwd()
-
-    def load_files(self, files: List[str]):
-        """Loads all files (list) into the Environment and merges .split files for common usage."""
-        self.load_assets(files, lambda x: open(x, "rb"))
+    def load_files(self, files: list):
+        """Loads all files (list) into the AssetsManager and merges .split files for common usage."""
+        path = os.path.dirname(files[0])
+        ImportHelper.merge_split_assets(path)
+        to_read_file = ImportHelper.processing_split_files(files)
+        self.load(to_read_file)
 
     def load_folder(self, path: str):
-        """Loads all files in the given path and its subdirs into the Environment."""
-        self.load_files(
-            [
-                self.fs.sep.join([root, f])
-                for root, dirs, files in self.fs.walk(path)
-                for f in files
-            ]
-        )
+        """Loads all files in the given path and its subdirs into the AssetsManager."""
+        ImportHelper.merge_split_assets(path, True)
+        files = ImportHelper.list_all_files(path)
+        to_read_file = ImportHelper.processing_split_files(files)
+        self.load(to_read_file)
 
     def load(self, files: list):
-        """Loads all files into the Environment."""
-        self.files.update(
-            {
-                ntpath.basename(f): self.load_file(self.fs.open(f, "rb"), self, f)
-                for f in files
-                if self.fs.exists(f)
-            }
-        )
+        """Loads all files into the AssetsManager."""
+        # for f in files:
+        #    self.import_files[os.path.basename(f)] = f
 
-    def load_file(
-        self,
-        file: Union[io.IOBase, str],
-        parent: Union["Environment", File] = None,
-        name: str = None,
-        is_dependency: bool = False,
-    ):
-        if not parent:
-            parent = self
+        # self.Progress.reset()
+        # use a for loop because list size can change
+        # for i, f in enumerate(self.import_files.values()):
+        for f in files:
+            self.load_file(f)
+            # self.Progress.report(i + 1, len(self.import_files))
 
-        if isinstance(file, str):
-            split_match = reSplit.match(file)
-            if split_match:
-                basepath, basename = split_match.groups()
-                file = []
-                for i in range(0, 999):
-                    item = f"{basepath}.split{i}"
-                    if self.fs.exists(item):
-                        with self.fs.open(item, "rb") as f:
-                            file.append(f.read())
-                    elif i:
-                        break
-                name = basepath
-                file = b"".join(file)
-            else:
-                name = file
-                file = self.fs.open(file, "rb")
+    def save(self, pack="none"):
+        """ Saves all changed assets.
+            Mark assets as changed using `.mark_changed()`.
+            pack = "none" (default) or "lz4"
+        """
+        for f in self.files:
+            if self.files[f].is_changed:
+                with open(os.path.join(self.out_path, os.path.basename(f)), 'wb') as out:
+                    out.write(self.files[f].save(packer=pack))
 
-        typ, reader = ImportHelper.check_file_type(file)
+    def process(self, obj_modify: Callable, types: list=DEFAULT_TYPES, **kwargs):
+        """Accept modification function `obj_modify => obj_modify(obj, asset, local_path) to modify `types` """
+        all_assets = self.assets
+        is_bundle = len(self.files) > 1
+        if is_bundle:
+            all_assets = self.progress_function(self.assets)
+        for asset in all_assets:
+            current_asset = self.assets[asset]
 
-        stream_name = (
-            name
-            if name
-            else getattr(
-                file,
-                "name",
-                str(file.__hash__()) if hasattr(file, "__hash__") else "",
-            )
-        )
+            # check which mode we will have to use
+            num_containers = sum(1 for obj in current_asset.container.values() if obj.type in types)
+            num_objects = sum(1 for obj in current_asset.objects.values() if obj.type in types)
+            if num_containers == 0 and num_objects == 0: continue
 
-        if typ == FileType.ZIP:
-            f = self.load_zip_file(file)
-        else:
-            f = ImportHelper.parse_file(
-                reader, self, name=stream_name, typ=typ, is_dependency=is_dependency
-            )
-        
-        if isinstance(f, (SerializedFile, EndianBinaryReader)):
-            self.register_cab(stream_name, f)
+            # check if container contains all important assets, if yes, just ignore the container
+            local_path = ''
+            if num_objects <= num_containers * 2:
+                all_items = current_asset.container.items()
+                if not is_bundle:
+                    all_items = self.progress_function(all_items)
+                for asset_path, obj in all_items:
+                    try:
+                        local_path = os.path.join(*asset_path.split('/')[self.ignore_dir_lvls:])
+                    except:
+                        pass
+                    if obj.type in types:
+                        obj_modify(obj, asset, local_path=local_path, **kwargs)
+            else: # otherwise use the container to generate a path for the normal objects
+                extracted = []
+                # find the most common path
+                occurence_count = Counter(os.path.splitext(asset_path)[0] for asset_path in current_asset.container.keys())
+                try:
+                    local_path = os.path.join(*occurence_count.most_common(1)[0][0].split('/')[self.ignore_dir_lvls:])
+                except:
+                    pass
+                all_values = current_asset.objects.values()
+                if not is_bundle:
+                    all_values = self.progress_function(all_values)
+                for obj in all_values:
+                    if obj.path_id not in extracted and obj.type in types:
+                        extracted.extend(obj_modify(obj, asset, local_path=local_path, **kwargs))
 
-        self.files[stream_name] = f
-
+    def load_file(self, full_name: str = "", data = None):
+        typ, reader = ImportHelper.check_file_type(data if data else full_name)
+        if not full_name:
+            full_name = str(data[:256])
+        if typ == FileType.AssetsFile:
+            self.files[full_name] = files.SerializedFile(reader, self)
+            self.assets[full_name] = self.files[full_name]
+        elif typ == FileType.BundleFile:
+            self.files[full_name] = files.BundleFile(reader, self)
+        elif typ == FileType.WebFile:
+            self.files[full_name] = files.WebFile(reader, self)
+        elif typ == FileType.ZIP:
+            self.load_zip_file(reader.stream)
+        elif typ == FileType.ResourceFile:
+            self.resources[os.path.basename(full_name)] = reader
 
     def load_zip_file(self, value):
         buffer = None
-        if isinstance(value, str) and self.fs.exists(value):
+        if isinstance(value, str) and os.path.exists(value):
             buffer = open(value, "rb")
         elif isinstance(value, (bytes, bytearray)):
-            buffer = io.BytesIO(value)
+            buffer = ZipFile(io.BytesIO(value))
         elif isinstance(value, (io.BufferedReader, io.BufferedIOBase)):
             buffer = value
 
         z = ZipFile(buffer)
-        self.load_assets(z.namelist(), lambda x: z.open(x, "r"))
-        z.close()
 
-    def save(self, pack="none", out_path="output"):
-        """Saves all changed assets.
-        Mark assets as changed using `.mark_changed()`.
-        pack = "none" (default) or "lz4"
-        """
-        for fname, fitem in self.files.items():
-            if getattr(fitem, "is_changed", False):
-                with open(
-                    self.fs.sep.join([out_path, ntpath.basename(f)]), "wb"
-                ) as out:
-                    out.write(fitem.save(packer=pack))
+        for path in z.namelist():
+            data = z.open(path).read()
+            if data:
+                self.load_file(path, data)
 
     @property
-    def objects(self) -> List[ObjectReader]:
-        """Returns a list of all objects in the Environment."""
-
+    def objects(self):
         def search(item):
             ret = []
             if not isinstance(item, Environment) and getattr(item, "objects", None):
                 # serialized file
-                if getattr(item, "is_dependency", False):
-                    return []
                 return [val for val in item.objects.values()]
 
             elif getattr(item, "files", None):  # WebBundle and BundleFile
@@ -180,144 +184,3 @@ class Environment:
             return ret
 
         return search(self)
-
-    @property
-    def container(self) -> Dict[str, ObjectReader]:
-        """Returns a dictionary of all objects in the Environment."""
-        return {
-            path: obj
-            for f in self.files.values()
-            if isinstance(f, File) and not f.is_dependency
-            for path, obj in f.container.items()
-        }
-
-    @property
-    def assets(self) -> list:
-        """
-        Lists all assets / SerializedFiles within this environment.
-        """
-
-        def gen_all_asset_files(file, ret=[]):
-            for f in getattr(file, "files", {}).values():
-                if getattr(f, "is_dependency", False):
-                    continue
-                if isinstance(f, SerializedFile):
-                    ret.append(f)
-                else:
-                    gen_all_asset_files(f, ret)
-            return ret
-
-        return gen_all_asset_files(self)
-
-    def get(self, key: str, default=None):
-        return getattr(self, key, default)
-
-    def register_cab(self, name: str, item: File) -> None:
-        """
-        Registers a cab file.
-
-        Parameters
-        ----------
-        name : str
-            The name of the cab file.
-        item : File
-            The file to register.
-        """
-        self.cabs[simplify_name(name)] = item
-
-    def get_cab(self, name: str) -> File:
-        """
-        Returns the cab file with the given name.
-
-        Parameters
-        ----------
-        name : str
-            The name of the cab file.
-
-        Returns
-        -------
-        File
-            The cab file.
-        """
-        return self.cabs.get(simplify_name(name), None)
-
-    def load_assets(self, assets: List[str], open_f: Callable[[str], io.IOBase]):
-        """
-        Load all assets from a list of files via the given open_f function.
-
-        Parameters
-        ----------
-        assets : List[str]
-            List of files to load.
-        open_f : Callable[[str], io.IOBase]
-            Function to open the files.
-            The function takes a file path and returns an io.IOBase object.
-        """
-        split_files = []
-        for path in assets:
-            splitMatch = reSplit.match(path)
-            if splitMatch:
-                basepath, basename = splitMatch.groups()
-
-                if basepath in split_files:
-                    continue
-
-                split_files.append(basepath)
-                data = []
-                for i in range(0, 999):
-                    item = f"{basepath}.split{i}"
-                    if item in assets:
-                        with open_f(item) as f:
-                            data.append(f.read())
-                    elif i:
-                        break
-                data = b"".join(data)
-                path = basepath
-            else:
-                data = open_f(path).read()
-            self.load_file(data, name=path)
-
-    def find_file(self, name: str, is_dependency: bool = True) -> Union[File, None]:
-        """
-        Finds a file in the environment.
-
-        Parameters
-        ----------
-        name : str
-            The name of the file.
-        is_dependency : bool
-            Whether the file is a dependency.
-
-        Returns
-        -------
-        File | None
-            The file if it was found, otherwise None.
-        """
-        simple_name = simplify_name(name)
-        cab = self.get_cab(simple_name)
-        if cab:
-            return cab
-
-        if len(self.local_files) == 0 and self.path:
-            for root, _, files in self.fs.walk(self.path):
-                for name in files:
-                    self.local_files.append(self.fs.sep.join([root, name]))
-
-        if name in self.local_files:
-            fp = name
-        elif simple_name in self.local_files_simple:
-            fp = self.local_files[self.local_files_simple.index(simple_name)]
-        else:
-            raise FileNotFoundError(f"File {name} not found in {self.path}")
-
-        f = self.load_file(fp, name=name, is_dependency=is_dependency)
-        return f
-
-
-def simplify_name(name: str) -> str:
-    """Simplifies a name by:
-    - removing the extension
-    - removing the path
-    - converting to lowercase
-    """
-    return ntpath.basename(name).lower()
