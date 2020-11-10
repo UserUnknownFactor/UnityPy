@@ -39,6 +39,40 @@ def find_all_files(directory: str, search_str: str) -> List[str]:
     ]
 
 
+def merge_split_assets(path: str, all_directories: bool = False):
+    if all_directories:
+        split_files = [fp for fp in list_all_files(path) if fp[-7:] == ".split0"]
+    else:
+        split_files = [
+            os.path.join(path, fp) for fp in os.listdir(path) if fp[-7:] == ".split0"
+        ]
+
+    for split_file in split_files:
+        dest_file = file_name_without_extension(split_file)
+        dest_path = os.path.dirname(split_file)
+        dest_full = os.path.join(dest_path, dest_file)
+
+        if not os.path.exists(dest_full):
+            with open(dest_full, "wb") as f:
+                i = 0
+                while True:
+                    split_part = "".join([dest_full, ".split", str(i)])
+                    if not os.path.isfile(split_part):
+                        break
+                    f.write(open(split_part, "rb").read())
+
+
+def processing_split_files(select_file: list) -> list:
+    split_files = [fp for fp in select_file if ".split" in fp]
+    select_file = [f for f in select_file if f not in split_files]
+
+    split_files = set([file_name_without_extension(fp) for fp in split_files])
+    for splitFile in split_files:
+        if os.path.isfile:
+            select_file.append(splitFile)
+    return select_file
+
+
 def check_file_type(input_) -> Union[FileType, EndianBinaryReader]:
     if isinstance(input_, str) and os.path.isfile(input_):
         reader = EndianBinaryReader(open(input_, "rb"))
@@ -53,9 +87,7 @@ def check_file_type(input_) -> Union[FileType, EndianBinaryReader]:
     if reader.Length < 20:
         return FileType.ResourceFile, reader
 
-    
     signature = reader.read_string_to_null(20)
-
     reader.Position = 0
     if signature in [
         "UnityWeb",

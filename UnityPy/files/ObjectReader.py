@@ -1,11 +1,9 @@
-from ..enums import ClassIDType
-
-from . import SerializedFile
+from ..enums import ClassIDType, makeClassID
 from .. import classes
 from ..classes.Object import NodeHelper
 from ..streams import EndianBinaryReader, EndianBinaryWriter
 from ..helpers import TypeTreeHelper
-from ..helpers.Tpk import get_typetree_nodes
+from ..helpers.Tpk import get_typetree_nodes as nodes_from_tpk
 from ..exceptions import TypeTreeError
 
 
@@ -72,7 +70,7 @@ class ObjectReader:
             self.serialized_type = typ
             self.class_id = typ.class_id
 
-        self.type = ClassIDType(self.class_id)
+        self.type = makeClassID(self.class_id)
 
         if header.version < 11:
             self.is_destroyed = reader.read_u_short()
@@ -206,19 +204,19 @@ class ObjectReader:
     def get_typetree_nodes(self, nodes: list = None) -> list:
         if nodes:
             return nodes
-        
         if self.serialized_type:
             nodes = self.serialized_type.nodes
         if not nodes:
-            nodes = get_typetree_nodes(self.class_id, self.version)
+            nodes = nodes_from_tpk(self.class_id, self.version)
         if not nodes:
             raise TypeTreeError("There are no TypeTree nodes for this object.")
         return nodes
 
-    def read_typetree(self, nodes: list = None) -> dict:
+    def read_typetree(self, nodes: list = None, all_trees: dict = None) -> dict:
         self.reset()
-        nodes = self.get_typetree_nodes(nodes)
-        return TypeTreeHelper.read_typetree(nodes, self)
+        if nodes is None:
+            nodes = self.get_typetree_nodes(nodes)
+        return TypeTreeHelper.read_typetree(nodes, self, all_trees)
 
     def save_typetree(
         self, tree: dict, nodes: list = None, writer: EndianBinaryWriter = None
@@ -232,13 +230,14 @@ class ObjectReader:
         return data
 
     def get_raw_data(self) -> bytes:
-        pos = self.Position
+        _pos = self.Position
         self.reset()
         ret = self.reader.read_bytes(self.byte_size)
-        self.Position = pos
+        self.Position = _pos
         return ret
 
     def set_raw_data(self, data):
         self.data = data
         if self.assets_file:
             self.assets_file.mark_changed()
+

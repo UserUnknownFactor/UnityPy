@@ -38,10 +38,9 @@ class Texture2D(Texture):
             self.m_MipCount = 1
 
         self.image_data = img_data
-        self.m_MipCount = 1
         # width * height * channel count
         self.m_CompleteImageSize = len(
-            img_data
+            self._image_data
         )  # img.width * img.height * len(img.getbands())
         self.m_TextureFormat = tex_format
 
@@ -110,9 +109,9 @@ class Texture2D(Texture):
             self._image_data = img_data
             self.reset_streamdata()
 
-        # width * height * channel count
+        # NOTE: It's expected to be width * height * channel count
         self.m_CompleteImageSize = len(
-            img_data
+            self._image_data
         )  # img.width * img.height * len(img.getbands())
         self.m_TextureFormat = tex_format
 

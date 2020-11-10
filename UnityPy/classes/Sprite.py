@@ -51,13 +51,11 @@ class Sprite(NamedObject):
         if version >= (2018,):  # 2018 and up
             m_BonesSize = reader.read_int()
             # TODO: might occur in earlier 2020 versions - 2020.3.13 reported
-            if version >= (
-                2020,
-                3,
-            ):
+            if version >= (2020, 3,):
                 self.m_Bones = [SpriteBone() for _ in range(m_BonesSize)]
             else:
-                self.m_Bones = [reader.read_vector2_array() for _ in range(m_BonesSize)]
+                pass
+                #self.m_Bones = [reader.read_vector2_array() for _ in range(m_BonesSize)]
 
     def save(self, writer: EndianBinaryWriter = None):
         if writer is None:

@@ -1,8 +1,8 @@
 ﻿# https://docs.unity3d.com/Manual/ClassIDReference.html
-from .ExtendableEnum import ExtendableEnum
+from enum import IntEnum
 
 
-class ClassIDType(ExtendableEnum):
+class ClassIDType(IntEnum):
     UnknownType = -1
     Object = 0
     GameObject = 1
@@ -371,3 +371,36 @@ class ClassIDType(ExtendableEnum):
     VisualEffect = 2083052967
     LocalizationAsset = 2083778819
     ScriptedImporter = 2089858483
+
+    def __str__(self):
+        return self.name
+
+    def __format__(self, fmt):
+        return self.name
+
+    def __eq__(self, value):
+        if isinstance(value, str):
+            return self.name == value
+        elif isinstance(value, ClassIDType):
+            return self._value_ == value._value_
+        elif isinstance(value, int):
+            if self.has_value(value):
+                return self._value_ == value
+            elif self._value_ == -1 and not self.has_value(value):
+                return True
+            return False
+        return self._value_ == value
+
+    @classmethod
+    def has_value(cls, value):
+        return value in cls._value2member_map_ 
+     
+
+def makeClassID(_cid):
+    if isinstance(_cid, ClassIDType):
+        return _cid
+    elif _cid == -1:
+        return ClassIDType.UnknownType
+    elif ClassIDType.has_value(_cid):
+        return ClassIDType(_cid)
+    return _cid

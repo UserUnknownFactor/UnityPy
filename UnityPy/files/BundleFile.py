@@ -1,4 +1,4 @@
-from . import File
+﻿from . import File
 from ..helpers import CompressionHelper
 from ..streams import EndianBinaryReader, EndianBinaryWriter
 import re
@@ -76,7 +76,7 @@ class BundleFile(File.File):
 
     def read_fs(self, reader: EndianBinaryReader):
         size = reader.read_long()
-        
+
         # header
         compressedSize = reader.read_u_int()
         uncompressedSize = reader.read_u_int()
@@ -194,14 +194,14 @@ class BundleFile(File.File):
 
         # 0b1000000 / 0b11000000 | 64 / 192 - uncompressed
         # 0b11000010 | 194 - lz4
-        # block_info_flag
+        # data_flag
 
         # 0 / 0b1000000 | 0 / 64 - uncompressed
         # 0b1   | 1 - lzma
         # 0b10  | 2 - lz4
         # 0b11  | 3 - lz4hc [not implemented]
         # 0b100 | 4 - lzham [not implemented]
-        # data_flag
+        # block_info_flag
 
         # header:
         #     bundle_size        (long)

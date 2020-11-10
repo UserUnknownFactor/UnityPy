@@ -17,6 +17,7 @@ def save_ptr(obj, writer: EndianBinaryWriter):
     else:
         writer.write_long(obj.path_id)
 
+cached_managers = dict()
 
 class PPtr:
     def __init__(self, reader: ObjectReader):
@@ -43,7 +44,7 @@ class PPtr:
                 external_name = self.external_name
                 # try to find it in the already registered cabs
                 manager = environment.get_cab(external_name)
-
+                
                 if not manager:
                     # guess we have to try to find it as file then
                     path = environment.path
@@ -56,12 +57,20 @@ class PPtr:
                                     manager = environment.load_file(
                                         os.path.join(root, name)
                                     )
-                                    environment.register_cab(name, manager)
                                     break
                             else:
                                 # else is reached if the previous loop didn't break
                                 continue
                             break
+                        #print(external_name, "not found")
+                if not manager:
+                     if external_name not in cached_managers:
+                         typ, reader = ImportHelper.check_file_type(external_name)
+                         if typ == FileType.AssetsFile:
+                             cached_managers[external_name] = files.SerializedFile(reader)
+                     if external_name in cached_managers:
+                         manager = cached_managers[external_name]
+
         if manager and self.path_id in manager.objects:
             self._obj = manager.objects[self.path_id]
         else:

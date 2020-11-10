@@ -1,5 +1,4 @@
-﻿import os
-import re
+﻿import os, re
 
 from . import File, ObjectReader
 from ..enums import BuildTarget, ClassIDType, CommonString
@@ -337,10 +336,10 @@ class SerializedFile(File.File):
                 level_stack[-1][1] -= 1
 
             type_tree_node = TypeTreeNode(
-                m_Level=level,
-                m_Type=self.reader.read_string_to_null(),
-                m_Name=self.reader.read_string_to_null(),
-                m_ByteSize=self.reader.read_int(),
+                m_Level = level,
+                m_Type = self.reader.read_string_to_null(),
+                m_Name = self.reader.read_string_to_null(),
+                m_ByteSize = self.reader.read_int(),
             )
 
             type_tree.append(type_tree_node)
@@ -400,7 +399,7 @@ class SerializedFile(File.File):
 
         return type_tree, string_buffer_reader.bytes
 
-    def get_writeable_cab(self, name: str = "CAB-UnityPy_Mod.resS"):
+    def get_writeable_cab(self, name: str = None):
         """
         Creates a new cab file in the bundle that contains the given data.
         This is usefull for asset types that use resource files.
@@ -639,3 +638,4 @@ def read_string(string_buffer_reader: EndianBinaryReader, value: int) -> str:
 
     offset = value & 0x7FFFFFFF
     return CommonString.get(offset, str(offset))
+

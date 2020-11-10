@@ -18,11 +18,11 @@ class TextAsset(NamedObject):
 
     @property
     def text(self):
-        return bytes(self.script).decode("utf8")
+        return bytes(self.m_Script).decode("utf-8")
 
     @text.setter
     def text(self, val):
-        self.script = val.encode("utf8")
+        self.m_Script = val.encode("utf-8")
 
     def save(self, writer: EndianBinaryWriter = None):
         if writer is None:

@@ -111,7 +111,7 @@ class EndianBinaryReader:
     def read_boolean(self) -> bool:
         return bool(unpack(self.endian + "?", self.read(1))[0])
 
-    def read_string(self, size=None, encoding="utf8") -> str:
+    def read_string(self, size=None, encoding="utf-8") -> str:
         if size is None:
             ret = self.read_string_to_null()
         else:
@@ -129,13 +129,13 @@ class EndianBinaryReader:
             c = self.read(1)
             if not c:
                 raise ValueError("Unterminated string: %r" % ret)
-        return b"".join(ret).decode("utf8", "surrogateescape")
+        return b"".join(ret).decode("utf-8", "surrogateescape")
 
     def read_aligned_string(self) -> str:
         length = self.read_int()
         if 0 < length <= self.Length - self.Position:
             string_data = bytes(self.read_bytes(length))
-            result = string_data.decode("utf8", "surrogateescape")
+            result = string_data.decode("utf-8", "surrogateescape")
             self.align_stream()
             return result
         return ""
@@ -268,15 +268,17 @@ class EndianBinaryReader_Memoryview(EndianBinaryReader):
     def read(self, length: int):
         if not length:
             return b""
-        ret = self.view[self.Position : self.Position + length]
+        data = self.view[self.Position: self.Position + length]
+        if(length != len(data)):
+            raise EOFError(f"Trying to read {length - len(data)} bytes beyond the end of stream {self.stream.name}")
         self.Position += length
-        return ret
+        return data
 
     def read_aligned_string(self):
         length = self.read_int()
         if 0 < length <= self.Length - self.Position:
             string_data = self.read_bytes(length)
-            result = bytes(string_data).decode("utf8", "surrogateescape")
+            result = bytes(string_data).decode("utf-8", "surrogateescape")
             self.align_stream()
             return result
         return ""
@@ -547,3 +549,4 @@ class EndianBinaryReader_Streamable_BigEndian(EndianBinaryReader_Streamable):
 
     def read_vector4(self):
         return Vector4(*unpack_big_vector4(self.read(16)))
+
