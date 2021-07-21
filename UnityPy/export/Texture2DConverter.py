@@ -1,94 +1,36 @@
 ﻿import texture2ddecoder
-import etcpak
 from PIL import Image
 from copy import copy
-from io import BytesIO
+from io import BytesIO, BufferedIOBase, RawIOBase, IOBase
 import struct
 from ..enums import TextureFormat, BuildTarget
 
 TF = TextureFormat
 
 
-def image_to_texture2d(img: Image.Image, target_texture_format: TF, flip: bool = True):
-    if flip:
-        img = img.transpose(Image.FLIP_TOP_BOTTOM)
-
-    # DXT
-    if target_texture_format in [TF.DXT1, TF.DXT1Crunched]:
-        raw_img = img.convert("RGBA").tobytes()
-        enc_img = etcpak.compress_to_dxt1(raw_img, img.width, img.height)
-        tex_format = TF.DXT1
-    elif target_texture_format in [TF.DXT5, TF.DXT5Crunched]:
-        raw_img = img.convert("RGBA").tobytes()
-        enc_img = etcpak.compress_to_dxt5(raw_img, img.width, img.height)
-        tex_format = TF.DXT5
-    # ETC
-    elif target_texture_format in [TF.ETC_RGB4, TF.ETC_RGB4Crunched, TF.ETC_RGB4_3DS]:
-        img = assert_rgba(img, target_texture_format)
-        r, g, b, a = img.split()
-        raw_img = Image.merge("RGBA", (b, g, r, a)).tobytes()
-        enc_img = etcpak.compress_to_etc1(raw_img, img.width, img.height)
-        tex_format = TF.ETC_RGB4
-    elif target_texture_format == TF.ETC2_RGB:
-        img = assert_rgba(img, target_texture_format)
-        r, g, b, a = img.split()
-        raw_img = Image.merge("RGBA", (b, g, r, a)).tobytes()
-        enc_img = etcpak.compress_to_etc2_rgb(raw_img, img.width, img.height)
-        tex_format = TF.ETC2_RGB
-    elif (
-        target_texture_format in [TF.ETC2_RGBA8, TF.ETC2_RGBA8Crunched, TF.ETC2_RGBA1]
-        or "_RGB_" in target_texture_format.name
-    ):
-        img = assert_rgba(img, target_texture_format)
-        r, g, b, a = img.split()
-        raw_img = Image.merge("RGBA", (b, g, r, a)).tobytes()
-        enc_img = etcpak.compress_to_etc2_rgba(raw_img, img.width, img.height)
-        tex_format = TF.ETC2_RGBA8
-    # A
-    elif target_texture_format == TF.Alpha8:
-        enc_img = img.tobytes("raw", "A")
-        tex_format = TF.Alpha8
-    # R - should probably be moerged into #A, as pure R is used as Alpha
-    # but need test data for this first
-    elif target_texture_format in [
-        TF.R8,
-        TF.R16,
-        TF.RHalf,
-        TF.RFloat,
-        TF.EAC_R,
-        TF.EAC_R_SIGNED,
-    ]:
-        enc_img = img.tobytes("raw", "R")
-        tex_format = TF.R8
-    # RGBA
-    elif target_texture_format in [
-        TF.RGB565,
-        TF.RGB24,
-        TF.RGB9e5Float,
-        TF.PVRTC_RGB2,
-        TF.PVRTC_RGB4,
-        TF.ATC_RGB4,
-    ]:
-        enc_img = img.tobytes("raw", "RGB")
-        tex_format = TF.RGB24
-    # everything else defaulted to RGBA
-    else:
-        enc_img = img.tobytes("raw", "RGBA")
-        tex_format = TF.RGBA32
-
-    return enc_img, tex_format
+def image_to_texture2d(img: Image, flip: bool = True):
+    # tex for eventually later usage of compressions
+    _image = None
+    if (isinstance(img, str) or isinstance(img, BufferedIOBase) or
+            isinstance(img, RawIOBase) or isinstance(img, IOBase)):
+        _image = Image.open(img)
+    elif isinstance(img, Image.Image):
+        _image = img
+    if _image:
+        if flip:
+            _image = _image.transpose(Image.FLIP_TOP_BOTTOM)
+    
+    _image.convert('RGB')
+    if _image.mode == "RGBA":
+        tex_format = TextureFormat.RGBA32
+    elif _image.mode == "RGB":
+        tex_format = TextureFormat.RGB24
+    elif _image.mode == "A":
+        tex_format = TextureFormat.Alpha8
+    return _image, tex_format
 
 
-def assert_rgba(img: Image.Image, target_texture_format: TextureFormat):
-    if img.mode == "RGB":
-        img = img.convert("RGBA")
-    assert (
-        img.mode == "RGBA"
-    ), f"{target_texture_format} compression only supports RGB & RGBA images"  # noqa: E501
-    return img
-
-
-def get_image_from_texture2d(texture_2d, flip=True) -> Image.Image:
+def get_image_from_texture2d(texture_2d, flip=True) -> Image:
     """converts the given texture into PIL.Image
 
     :param texture_2d: texture to be converterd
@@ -100,13 +42,10 @@ def get_image_from_texture2d(texture_2d, flip=True) -> Image.Image:
     """
     image_data = copy(bytes(texture_2d.image_data))
     if not image_data:
-        raise ValueError("Texture2D has no image data")
-
-    texture_format = (
-        texture_2d.m_TextureFormat
-        if isinstance(texture_2d.m_TextureFormat, TF)
-        else TF(texture_2d.m_TextureFormat)
-    )
+        return Image.new("RGB", (0, 0))
+    
+    texture_format = texture_2d.m_TextureFormat if isinstance(texture_2d, TextureFormat) else TextureFormat(
+        texture_2d.m_TextureFormat)
     selection = CONV_TABLE[texture_format]
 
     if len(selection) == 0:
@@ -119,12 +58,9 @@ def get_image_from_texture2d(texture_2d, flip=True) -> Image.Image:
 
     if "Crunched" in texture_format.name:
         version = texture_2d.version
-        if (
-            version[0] > 2017
-            or (version[0] == 2017 and version[1] >= 3)  # 2017.3 and up
-            or texture_format == TF.ETC_RGB4Crunched
-            or texture_format == TF.ETC2_RGBA8Crunched
-        ):
+        if (version[0] > 2017 or (version[0] == 2017 and version[1] >= 3)  # 2017.3 and up
+                or texture_format == TextureFormat.ETC_RGB4Crunched
+                or texture_format == TextureFormat.ETC2_RGBA8Crunched):
             image_data = texture2ddecoder.unpack_unity_crunch(image_data)
         else:
             image_data = texture2ddecoder.unpack_crunch(image_data)
@@ -158,14 +94,8 @@ def swap_bytes_for_xbox(image_data: bytes, build_target: BuildTarget) -> bytes:
 
 
 def pillow(
-    image_data: bytes,
-    width: int,
-    height: int,
-    mode: str,
-    codec: str,
-    args,
-    swap: tuple = None,
-) -> Image.Image:
+    image_data: bytes, width: int, height: int, mode: str, codec: str, args, swap=False
+) -> Image:
     img = (
         Image.frombytes(mode, (width, height), image_data, codec, args)
         if width
@@ -177,7 +107,7 @@ def pillow(
     return img
 
 
-def atc(image_data: bytes, width: int, height: int, alpha: bool) -> Image.Image:
+def atc(image_data: bytes, width: int, height: int, alpha: bool) -> Image:
     if alpha:
         image_data = texture2ddecoder.decode_atc_rgba8(image_data, width, height)
     else:
@@ -186,7 +116,7 @@ def atc(image_data: bytes, width: int, height: int, alpha: bool) -> Image.Image:
     return Image.frombytes("RGBA", (width, height), image_data, "raw", "BGRA")
 
 
-def astc(image_data: bytes, width: int, height: int, block_size: tuple) -> Image.Image:
+def astc(image_data: bytes, width: int, height: int, block_size: tuple) -> Image:
     image_data = texture2ddecoder.decode_astc(image_data, width, height, *block_size)
     return Image.frombytes("RGBA", (width, height), image_data, "raw", "BGRA")
 
@@ -210,7 +140,6 @@ def etc(image_data: bytes, width: int, height: int, fmt: list):
         raise NotImplementedError("unknown etc mode")
     return Image.frombytes("RGBA", (width, height), image_data, "raw", "BGRA")
 
-
 def eac(image_data: bytes, width: int, height: int, fmt: list):
     if fmt == "EAC_R":
         image_data = texture2ddecoder.decode_eacr(image_data, width, height)
@@ -222,16 +151,9 @@ def eac(image_data: bytes, width: int, height: int, fmt: list):
         image_data = texture2ddecoder.decode_eacrg_signed(image_data, width, height)
     return Image.frombytes("RGBA", (width, height), image_data, "raw", "BGRA")
 
-
 def half(
-    image_data: bytes,
-    width: int,
-    height: int,
-    mode: str,
-    codec: str,
-    args,
-    swap: tuple = None,
-) -> Image.Image:
+        image_data: bytes, width: int, height: int, mode: str, codec: str, args, swap: tuple = None
+) -> Image:
     # convert half-float to int8
     stream = BytesIO(image_data)
     image_data = bytes(
@@ -266,7 +188,7 @@ CONV_TABLE = {
 (  TF.YUY2,                                                                                     ),
 (  TF.RGB9e5Float,                                                                              ),
 (  TF.BC4,                 pillow,  "L",     "bcn",       4                                     ),
-(  TF.BC5,                 pillow,  "RGB",   "bcn",       5                                     ),
+(  TF.BC5,                 pillow,  "RGBA",  "bcn",       5                                     ),
 (  TF.BC6H,                pillow,  "RGBA",  "bcn",       6                                     ),
 (  TF.BC7,                 pillow,  "RGBA",  "bcn",       7                                     ),
 (  TF.DXT1Crunched,        pillow,  "RGBA",  "bcn",       1                                     ),
