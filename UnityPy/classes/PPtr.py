@@ -1,7 +1,10 @@
 from ..files import ObjectReader
 from ..streams import EndianBinaryWriter
-from ..enums import ClassIDType
-
+from ..helpers import ImportHelper
+from .. import files
+from ..enums import FileType, ClassIDType
+import os
+from .. import environment
 
 def save_ptr(obj, writer: EndianBinaryWriter):
     if isinstance(obj, PPtr):
@@ -13,6 +16,7 @@ def save_ptr(obj, writer: EndianBinaryWriter):
     else:
         writer.write_long(obj.path_id)
 
+cached_managers = dict()
 
 class PPtr:
     def __init__(self, reader: ObjectReader):
@@ -29,62 +33,53 @@ class PPtr:
     def get_obj(self):
         if self._obj != None:
             return self._obj
-
         manager = None
-
         if self.file_id == 0:
             manager = self.assets_file
 
         elif self.file_id > 0 and self.file_id - 1 < len(self.assets_file.externals):
             if self.index == -2:
-                environment = self.assets_file.environment
-                external_name = self.external_name
-                # try to find it in the already registered cabs
-                manager = environment.get_cab(external_name)
-                # not found, load all dependencies and try again
-                if not manager:
-                    self.assets_file.load_dependencies([external_name])
-                    manager = environment.get_cab(external_name)
+                external_name = self.assets_file.externals[self.file_id - 1].name
+                parent = self.assets_file.parent
+                if parent is not None:
+                    if external_name in parent.files:
+                        manager = parent.files[external_name]
+                    elif external_name.upper() in parent.files:
+                        manager = parent.files[external_name.upper()]
+                    else:
+                        while not isinstance(parent, environment.Environment):
+                            parent = parent.parent
+                        if parent.path:
+                            path = parent.path
+                            files = os.listdir(path)
+                            if external_name in files:
+                                parent.load_files([os.path.join(path, external_name)])
+                                manager = parent.files[external_name]
+                else:
+                    if external_name not in cached_managers:
+                        typ, reader = ImportHelper.check_file_type(external_name)
+                        if typ == FileType.AssetsFile:
+                            cached_managers[external_name] = files.SerializedFile(reader)
+                    if external_name in cached_managers:
+                        manager = cached_managers[external_name]
 
-        if manager is not None:
-            self._obj = manager.objects.get(self.path_id)
+        if manager and self.path_id in manager.objects:
+            self._obj = manager.objects[self.path_id]
         else:
             self._obj = None
-            if self.external_name:
-                print(f"Couldn't find dependency {self.external_name}")
-                print("You can try to load it manually to the environment in advance")
-                print("for Web-&BundleFiles: env.load_file(dependency)")
-                print(
-                    "for SerializedFiles: env.register_cab(depdency_basename, env.load_file(dependency)"
-                )
-            elif self.path_id:
-                print(f"Couldn't find referenced object with path_id {self.path_id}")
 
         return self._obj
 
-    @property
-    def type(self):
-        obj = self.get_obj()
-        if obj is None:
-            return ClassIDType.UnknownType
-        return obj.type
-
-    @property
-    def external_name(self):
-        if self.file_id > 0 and self.file_id - 1 < len(self.assets_file.externals):
-            return self.assets_file.externals[self.file_id - 1].name
-
     def __getattr__(self, key):
         obj = self.get_obj()
+        if obj is None:
+            if key == "type":
+                return ClassIDType.UnknownType
+            raise AttributeError(key)
         return getattr(obj, key)
 
     def __repr__(self):
-        return "<%s %s>" % (
-            self.__class__.__name__,
-            self._obj.__class__.__repr__(self.get_obj())
-            if self.get_obj()
-            else "Not Found",
-        )
+        return "<%s %s>" % (self.__class__.__name__, self._obj.__class__.__repr__(self.get_obj()) if self.get_obj() else "Not Found")
 
     def __bool__(self):
         return True if self.get_obj() else False

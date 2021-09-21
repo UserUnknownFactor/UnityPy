@@ -1,7 +1,7 @@
 ﻿import texture2ddecoder
 from PIL import Image
 from copy import copy
-from io import BytesIO, BufferedIOBase, RawIOBase, IOBase
+from io import BytesIO
 import struct
 from ..enums import TextureFormat, BuildTarget
 
@@ -10,24 +10,19 @@ TF = TextureFormat
 
 def image_to_texture2d(img: Image, flip: bool = True):
     # tex for eventually later usage of compressions
-    _image = None
-    if (isinstance(img, str) or isinstance(img, BufferedIOBase) or
-            isinstance(img, RawIOBase) or isinstance(img, IOBase)):
-        _image = Image.open(img)
-    elif isinstance(img, Image.Image):
-        _image = img
-    if _image:
-        if flip:
-            _image = _image.transpose(Image.FLIP_TOP_BOTTOM)
-    
-    _image.convert('RGB')
-    if _image.mode == "RGBA":
+
+    tex_format = None
+    if flip:
+        img = img.transpose(Image.FLIP_TOP_BOTTOM)
+
+    if img.mode == "RGBA":
         tex_format = TextureFormat.RGBA32
-    elif _image.mode == "RGB":
+    elif img.mode == "RGB":
         tex_format = TextureFormat.RGB24
-    elif _image.mode == "A":
+    elif img.mode == "A":
         tex_format = TextureFormat.Alpha8
-    return _image, tex_format
+
+    return img.tobytes(), tex_format
 
 
 def get_image_from_texture2d(texture_2d, flip=True) -> Image:
@@ -86,15 +81,15 @@ def swap_bytes_for_xbox(image_data: bytes, build_target: BuildTarget) -> bytes:
     :rtype: bytes
     """
     if (
-        build_target == BuildTarget.XBOX360
+            build_target == BuildTarget.XBOX360
     ):  # swap bytes for Xbox confirmed,PS3 not encountered
         for i in range(0, len(image_data), 2):
-            image_data[i : i + 2] = image_data[i : i + 2][::-1]
+            image_data[i: i + 2] = image_data[i: i + 2][::-1]
     return image_data
 
 
 def pillow(
-    image_data: bytes, width: int, height: int, mode: str, codec: str, args, swap=False
+        image_data: bytes, width: int, height: int, mode: str, codec: str, args, swap: tuple = None
 ) -> Image:
     img = (
         Image.frombytes(mode, (width, height), image_data, codec, args)
@@ -140,6 +135,7 @@ def etc(image_data: bytes, width: int, height: int, fmt: list):
         raise NotImplementedError("unknown etc mode")
     return Image.frombytes("RGBA", (width, height), image_data, "raw", "BGRA")
 
+
 def eac(image_data: bytes, width: int, height: int, fmt: list):
     if fmt == "EAC_R":
         image_data = texture2ddecoder.decode_eacr(image_data, width, height)
@@ -150,6 +146,7 @@ def eac(image_data: bytes, width: int, height: int, fmt: list):
     elif fmt == "EAC_RG_SIGNED":
         image_data = texture2ddecoder.decode_eacrg_signed(image_data, width, height)
     return Image.frombytes("RGBA", (width, height), image_data, "raw", "BGRA")
+
 
 def half(
         image_data: bytes, width: int, height: int, mode: str, codec: str, args, swap: tuple = None

@@ -1,7 +1,7 @@
-from .ExtendableEnum import ExtendableEnum
+from enum import IntEnum
 
 
-class BuildTarget(ExtendableEnum):
+class BuildTarget(IntEnum):
     UnknownPlatform = 3716
     DashboardWidget = 1
     StandaloneOSX = 2
@@ -38,3 +38,13 @@ class BuildTarget(ExtendableEnum):
     tvOS = 37
     Switch = 38
     NoTarget = -2
+
+    @classmethod
+    def _missing_(cls, value):
+        ret = BuildTarget.UnknownPlatform
+        ret._value = value
+        return ret
+
+    @property
+    def value(self):
+        return getattr(self, "_value", self._value_)

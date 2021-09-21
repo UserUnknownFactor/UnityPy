@@ -1,5 +1,5 @@
 import math
-from typing import List
+import traceback
 
 from .AnimationClip import AABB, PackedFloatVector, PackedIntVector
 from .NamedObject import NamedObject
@@ -10,12 +10,7 @@ from ..streams import EndianBinaryWriter
 from ..enums import GfxPrimitiveType
 import struct
 from enum import IntEnum
-from ..export import MeshExporter
-
-try:
-    from UnityPy import UnityPyBoost
-except:
-    UnityPyBoost = None
+from ..export.MeshExporter import export_mesh
 
 
 class MinMaxAABB:
@@ -107,7 +102,7 @@ class ChannelInfo:
         self.stream = reader.read_byte()
         self.offset = reader.read_byte()
         self.format = reader.read_byte()
-        self.dimension = reader.read_byte() & 0xF
+        self.dimension = reader.read_byte()
 
     def save(self, writer):
         writer.write_byte(self.stream)
@@ -128,7 +123,8 @@ class VertexData:
 
         if version >= (4,):  # 4.0 and up
             m_ChannelsSize = reader.read_int()
-            self.m_Channels = [ChannelInfo(reader) for _ in range(m_ChannelsSize)]
+            self.m_Channels = [ChannelInfo(reader)
+                               for _ in range(m_ChannelsSize)]
 
         if version < (5,):  # 5.0 down
             if version < (4,):  # 4.0 down
@@ -136,7 +132,8 @@ class VertexData:
             else:
                 m_StreamsSize = reader.read_int()
 
-            self.m_Streams = [StreamInfo(reader=reader) for _ in range(m_StreamsSize)]
+            self.m_Streams = [StreamInfo(reader=reader)
+                              for _ in range(m_StreamsSize)]
 
             if version < (4,):  # 4.0 down
                 self.GetChannels()
@@ -189,9 +186,8 @@ class VertexData:
                     if m_Channel.dimension > 0:
                         chnMask |= 1 << chn  # Shift 1UInt << chn
                         stride += m_Channel.dimension * MeshHelper.GetFormatSize(
-                            MeshHelper.ToVertexFormat(
-                                m_Channel.format, self.reader.version
-                            )
+                            self.reader.version,
+                            m_Channel.format
                         )
             self.m_Streams[s] = StreamInfo(
                 channelMask=chnMask,
@@ -235,7 +231,7 @@ class VertexData:
                         m_Channel.format = 0  # kChannelFormatFloat
                         m_Channel.dimension = 4
                     offset += m_Channel.dimension * MeshHelper.GetFormatSize(
-                        MeshHelper.ToVertexFormat(m_Channel.format, self.reader.version)
+                        self.reader.version, m_Channel.format
                     )
 
 
@@ -298,11 +294,13 @@ class BlendShapeData:
             self.shapes = [MeshBlendShape(reader) for _ in range(numShapes)]
 
             numChannels = reader.read_int()
-            self.channels = [MeshBlendShapeChannel(reader) for _ in range(numChannels)]
+            self.channels = [MeshBlendShapeChannel(
+                reader) for _ in range(numChannels)]
             self.fullWeights = reader.read_float_array()
         else:
             m_ShapesSize = reader.read_int()
-            self.m_Shapes = [MeshBlendShape(reader) for _ in range(m_ShapesSize)]
+            self.m_Shapes = [MeshBlendShape(reader)
+                             for _ in range(m_ShapesSize)]
             reader.align_stream()
             m_ShapeVerticesSize = reader.read_int()
             self.m_ShapeVertices = [
@@ -346,8 +344,9 @@ class SubMesh:
 
 
 class Mesh(NamedObject):
+
     def export(self):
-        return MeshExporter.export_mesh(self)
+        return export_mesh(self)
 
     def __init__(self, reader):
         super().__init__(reader=reader)
@@ -385,8 +384,7 @@ class Mesh(NamedObject):
                 reader.align_stream()
             else:
                 self.m_IndexBuffer = reader.read_u_int_array(
-                    math.ceil(m_IndexBuffer_size / 4)
-                )
+                    math.ceil(m_IndexBuffer_size / 4))
 
         m_SubMeshesSize = reader.read_int()
         self.m_SubMeshes = [SubMesh(reader) for _ in range(m_SubMeshesSize)]
@@ -402,7 +400,8 @@ class Mesh(NamedObject):
         if version >= (2, 6):  # 2.6.0 and up
             if version >= (2019,):  # 2019 and up
                 m_BonesAABBSize = reader.read_int()
-                self.m_BonesAABB = [MinMaxAABB(reader) for _ in range(m_BonesAABBSize)]
+                self.m_BonesAABB = [MinMaxAABB(reader)
+                                    for _ in range(m_BonesAABBSize)]
                 self.m_VariableBoneCountWeights = reader.read_u_int_array()
 
             self.m_MeshCompression = reader.read_byte()
@@ -416,13 +415,11 @@ class Mesh(NamedObject):
 
             # Unity fixed it in 2017.3.1p1 and later versions
             if (
-                version >= (2017, 4)  # 2017.4
-                # fixed after 2017.3.1px
-                or version[:3] == (2017, 3, 1)
-                and self.build_type.IsPatch
-                # 2017.3.xfx with no compression
-                or version[:2] == (2017, 3)
-                and self.m_MeshCompression == 0
+                    version >= (2017, 4)  # 2017.4
+                    # fixed after 2017.3.1px
+                    or version[:3] == (2017, 3, 1) and self.build_type.IsPatch
+                    # 2017.3.xfx with no compression
+                    or version[:2] == (2017, 3) and self.m_MeshCompression == 0
             ):
                 self.m_IndexFormat = reader.read_int()
                 self.m_Use16BitIndices = self.m_IndexFormat == 0
@@ -430,25 +427,27 @@ class Mesh(NamedObject):
             m_IndexBuffer_size = reader.read_int()
             if self.m_Use16BitIndices:
                 self.m_IndexBuffer = [
-                    reader.read_u_short()
-                    for _ in range(math.ceil(m_IndexBuffer_size / 2))
+                    reader.read_u_short() for _ in range(math.ceil(m_IndexBuffer_size / 2))
                 ]
                 reader.align_stream()
             else:
                 self.m_IndexBuffer = reader.read_u_int_array(
-                    math.ceil(m_IndexBuffer_size / 4)
-                )
+                    math.ceil(m_IndexBuffer_size / 4))
 
         if version < (3, 5):  # 3.4.2 and earlier
             self.m_VertexCount = reader.read_int()
-            self.m_Vertices = reader.read_float_array(self.m_VertexCount * 3)  # Vector3
+            self.m_Vertices = reader.read_float_array(
+                self.m_VertexCount * 3)  # Vector3
 
             self.m_SkinSize = reader.read_int()
-            self.m_Skin = [BoneWeights4(reader) for _ in range(self.m_SkinSize)]
+            self.m_Skin = [BoneWeights4(reader)
+                           for _ in range(self.m_SkinSize)]
 
             self.m_BindPose = reader.read_matrix_array()
-            self.m_UV0 = reader.read_float_array(reader.read_int() * 2)  # Vector2
-            self.m_UV1 = reader.read_float_array(reader.read_int() * 2)  # Vector2
+            self.m_UV0 = reader.read_float_array(
+                reader.read_int() * 2)  # Vector2
+            self.m_UV1 = reader.read_float_array(
+                reader.read_int() * 2)  # Vector2
 
             if version[:2] <= (2, 5):  # 2.5 and down
                 m_TangentSpace_size = reader.read_int()
@@ -487,7 +486,10 @@ class Mesh(NamedObject):
 
         if version[:2] <= (3, 4):  # 3.4.2 and earlier
             m_Colors_size = reader.read_int()
-            self.mColors = [reader.read_byte() / 0xFF for _ in range(m_Colors_size * 4)]
+            self.mColors = [
+                reader.read_byte() / 0xFF
+                for _ in range(m_Colors_size * 4)
+            ]
 
             m_CollisionTriangles_size = reader.read_int()
             reader.Position += m_CollisionTriangles_size * 4  # UInt32 indices
@@ -495,9 +497,12 @@ class Mesh(NamedObject):
 
         self.m_MeshUsageFlags = reader.read_int()
         if version >= (5,):  # 5.0 and up
-            self.m_BakedConvexCollisionMesh = reader.read_bytes(reader.read_int())
+            self.m_BakedConvexCollisionMesh = reader.read_bytes(
+                reader.read_int()
+            )
             reader.align_stream()
-            self.m_BakedTriangleCollisionMesh = reader.read_bytes(reader.read_int())
+            self.m_BakedTriangleCollisionMesh = reader.read_bytes(
+                reader.read_int())
             reader.align_stream()
 
         if version >= (2018, 2):  # 2018.2 and up
@@ -507,13 +512,25 @@ class Mesh(NamedObject):
             reader.align_stream()
             self.m_StreamData = StreamingInfo(reader, version)
 
-            if self.m_StreamData.path and self.m_VertexData.m_VertexCount > 0:
-                self.m_VertexData.m_DataSize = get_resource_data(
-                    self.m_StreamData.path,
-                    self.assets_file,
-                    self.m_StreamData.offset,
-                    self.m_StreamData.size,
-                )
+        try:
+            self.ProcessData()
+        except Exception as e:
+            print(traceback.format_exc())
+            pass
+
+    def ProcessData(self):
+        # `m_StreamData` attribute may not exists for some assets
+        if hasattr(self, "m_StreamData"):
+            path = self.m_StreamData.path
+        else:
+            path = None
+        if path and self.m_VertexData.m_VertexCount > 0:
+            self.m_VertexData.m_DataSize = get_resource_data(
+                self.m_StreamData.path,
+                self.assets_file,
+                self.m_StreamData.offset,
+                self.m_StreamData.size,
+            )
 
         # Fix channel after 2018.3
         version = self.version
@@ -539,55 +556,34 @@ class Mesh(NamedObject):
                         m_Channel.dimension = 4
 
                     componentByteSize = MeshHelper.GetFormatSize(
-                        MeshHelper.ToVertexFormat(m_Channel.format, self.reader.version)
-                    )
-                    swap = self.reader.endian == "<" and componentByteSize > 1
+                        version, m_Channel.format)
+                    componentBytes = bytearray(
+                        m_VertexCount * m_Channel.dimension * componentByteSize)
+                    for v in range(m_VertexCount):
+                        vertexOffset = int(
+                            m_Stream.offset) + m_Channel.offset + int(m_Stream.stride) * v
+                        for d in range(m_Channel.dimension):
+                            componentOffsetSrc = vertexOffset + componentByteSize * d  # src offset
+                            componentOffsetDst = componentByteSize * \
+                                (v * m_Channel.dimension + d)  # dst offst
 
-                    if UnityPyBoost:
-                        componentBytes = UnityPyBoost.unpack_vertexdata(
-                            bytes(m_VertexData.m_DataSize),
-                            componentByteSize,
-                            m_VertexCount,
-                            m_Stream.offset,
-                            m_Stream.stride,
-                            m_Channel.offset,
-                            m_Channel.dimension,
-                            swap,
-                        )
-                    else:
-                        componentBytes = bytearray(
-                            m_VertexCount * m_Channel.dimension * componentByteSize
-                        )
+                            buff = m_VertexData.m_DataSize[componentOffsetSrc:
+                                                           componentOffsetSrc + componentByteSize]
 
-                        vertexBaseOffset = m_Stream.offset + m_Channel.offset
-                        for v in range(m_VertexCount):
-                            vertexOffset = vertexBaseOffset + m_Stream.stride * v
-                            for d in range(m_Channel.dimension):
-                                componentOffset = vertexOffset + componentByteSize * d
-                                vertexDataSrc = componentOffset
-                                componentDataSrc = componentByteSize * (
-                                    v * m_Channel.dimension + d
-                                )
-                                buff = m_VertexData.m_DataSize[
-                                    vertexDataSrc : vertexDataSrc + componentByteSize
-                                ]
-                                if swap:  # swap bytes
-                                    buff = buff[::-1]
-                                componentBytes[
-                                    componentDataSrc : componentDataSrc
-                                    + componentByteSize
-                                ] = buff
+                            if self.reader.endian == "<" and componentByteSize > 1:  # swap bytes
+                                buff = buff[::-1]
+
+                            componentBytes[componentOffsetDst: componentOffsetDst +
+                                           componentByteSize] = buff
+                            # Buffer.BlockCopy(m_VertexData.m_DataSize, componentOffset, componentBytes, componentByteSize * (v * m_Channel.dimension + d), componentByteSize);
+                            # (Array src, int srcOffset, Array dst, int dstOffset, int count);
 
                     if MeshHelper.IsIntFormat(version, m_Channel.format):
                         componentsIntArray = MeshHelper.BytesToIntArray(
-                            componentBytes, componentByteSize
-                        )
+                            componentBytes, componentByteSize)
                     else:
                         componentsFloatArray = MeshHelper.BytesToFloatArray(
-                            componentBytes,
-                            componentByteSize,
-                            MeshHelper.ToVertexFormat(m_Channel.format, version),
-                        )
+                            componentBytes, componentByteSize)
 
                     if version[0] >= 2018:
                         if chn == 0:  # kShaderChannelVertex
@@ -620,17 +616,15 @@ class Mesh(NamedObject):
                                 self.InitMSkin()
                             for i in range(m_VertexCount):
                                 for j in range(m_Channel.dimension):
-                                    self.m_Skin[i].weight[j] = componentsFloatArray[
-                                        i * m_Channel.dimension + j
-                                    ]
+                                    self.m_Skin[i].weight[j] = componentsFloatArray[i *
+                                                                                    m_Channel.dimension + j]
                         elif chn == 13:  # kShaderChannelBlendIndices
                             if not self.m_Skin:
                                 self.InitMSkin()
                             for i in range(m_VertexCount):
                                 for j in range(m_Channel.dimension):
-                                    self.m_Skin[i].boneIndex[j] = componentsIntArray[
-                                        i * m_Channel.dimension + j
-                                    ]
+                                    self.m_Skin[i].boneIndex[j] = componentsIntArray[i *
+                                                                                     m_Channel.dimension + j]
                     else:
                         if chn == 0:  # kShaderChannelVertex
                             self.m_Vertices = componentsFloatArray
@@ -657,8 +651,10 @@ class Mesh(NamedObject):
         version = self.version
         m_CompressedMesh = self.m_CompressedMesh
         if m_CompressedMesh.m_Vertices.m_NumItems > 0:
-            self.m_VertexCount = int(m_CompressedMesh.m_Vertices.m_NumItems / 3)
-            self.m_Vertices = m_CompressedMesh.m_Vertices.UnpackFloats(3, 3 * 4)
+            self.m_VertexCount = int(
+                m_CompressedMesh.m_Vertices.m_NumItems / 3)
+            self.m_Vertices = m_CompressedMesh.m_Vertices.UnpackFloats(
+                3, 3 * 4)
         m_VertexCount = self.m_VertexCount
         # UV
         if m_CompressedMesh.m_UV.m_NumItems > 0:  #
@@ -678,13 +674,11 @@ class Mesh(NamedObject):
                     if (texCoordBits & kUVChannelExists) != 0:
                         uvDim = 1 + int(texCoordBits & kUVDimensionMask)
                         m_UV = m_CompressedMesh.m_UV.UnpackFloats(
-                            uvDim, uvDim * 4, uvSrcOffset, self.m_VertexCount
-                        )
+                            uvDim, uvDim * 4, uvSrcOffset, self.m_VertexCount)
                         self.SetUV(uv, m_UV)
             else:
                 self.m_UV0 = m_CompressedMesh.m_UV.UnpackFloats(
-                    2, 2 * 4, 0, m_VertexCount
-                )
+                    2, 2*4, 0, m_VertexCount)
                 if m_CompressedMesh.m_UV.m_NumItems >= m_VertexCount * 4:  #
                     self.m_UV1 = m_CompressedMesh.m_UV.UnpackFloats(
                         2, 2 * 4, m_VertexCount * 2, m_VertexCount
@@ -697,7 +691,7 @@ class Mesh(NamedObject):
                     16, 4 * 16
                 )
                 self.m_BindPose = [
-                    Matrix4x4(m_BindPoses_Unpacked[i : i + 16])
+                    Matrix4x4(m_BindPoses_Unpacked[i: i + 16])
                     for i in range(0, m_CompressedMesh.m_BindPoses.m_NumItems, 16)
                 ]
         # Normal
@@ -749,7 +743,8 @@ class Mesh(NamedObject):
         # FloatColor
         if version >= (5,):  # 5.0 and up
             if m_CompressedMesh.m_FloatColors.m_NumItems > 0:  #
-                self.m_Colors = m_CompressedMesh.m_FloatColors.UnpackFloats(1, 4)
+                self.m_Colors = m_CompressedMesh.m_FloatColors.UnpackFloats(
+                    1, 4)
 
         # Skin
         if m_CompressedMesh.m_Weights.m_NumItems > 0:
@@ -793,8 +788,8 @@ class Mesh(NamedObject):
             self.m_IndexBuffer = m_CompressedMesh.m_Triangles.UnpackInts()
         # Color
         if (
-            hasattr(m_CompressedMesh, "m_Colors")
-            and m_CompressedMesh.m_Colors.m_NumItems > 0
+                hasattr(m_CompressedMesh, "m_Colors")
+                and m_CompressedMesh.m_Colors.m_NumItems > 0
         ):
             m_CompressedMesh.m_Colors.m_NumItems *= 4
             m_CompressedMesh.m_Colors.m_BitSize /= 4
@@ -814,47 +809,42 @@ class Mesh(NamedObject):
             topology = m_SubMesh.topology
             if topology == GfxPrimitiveType.kPrimitiveTriangles:
                 m_Indices.extend(
-                    m_IndexBuffer[firstIndex : firstIndex + indexCount - indexCount % 3]
-                )
+                    m_IndexBuffer[firstIndex: firstIndex + indexCount * 3])
 
-            elif (
-                self.version[0] < 4
-                or topology == GfxPrimitiveType.kPrimitiveTriangleStrip
-            ):
+            elif self.version[0] < 4 or topology == GfxPrimitiveType.kPrimitiveTriangleStrip:
                 # de-stripify :
                 triIndex = 0
                 for i in range(indexCount - 2):
-                    a, b, c = m_IndexBuffer[firstIndex + i : firstIndex + i + 3]
+                    a, b, c = m_IndexBuffer[firstIndex + i: firstIndex + i + 3]
 
                     # skip degenerates
                     if a == b or a == c or b == c:
                         continue
 
                     # do the winding flip-flop of strips :
-                    m_Indices.extend([b, a, c] if ((i & 1) == 1) else [a, b, c])
+                    m_Indices.extend(
+                        [b, a, c] if ((i & 1) == 1) else [a, b, c]
+                    )
                     triIndex += 3
                 # fix indexCount
                 m_SubMesh.indexCount = triIndex
 
             elif topology == GfxPrimitiveType.kPrimitiveQuads:
                 for q in range(0, indexCount, 4):
-                    m_Indices.extend(
-                        [
-                            m_IndexBuffer[firstIndex + q],
-                            m_IndexBuffer[firstIndex + q + 1],
-                            m_IndexBuffer[firstIndex + q + 2],
-                            m_IndexBuffer[firstIndex + q],
-                            m_IndexBuffer[firstIndex + q + 2],
-                            m_IndexBuffer[firstIndex + q + 3],
-                        ]
-                    )
+                    m_Indices.extend([
+                        m_IndexBuffer[firstIndex + q],
+                        m_IndexBuffer[firstIndex + q + 1],
+                        m_IndexBuffer[firstIndex + q + 2],
+                        m_IndexBuffer[firstIndex + q],
+                        m_IndexBuffer[firstIndex + q + 2],
+                        m_IndexBuffer[firstIndex + q + 3]
+                    ])
                 # fix indexCount
                 m_SubMesh.indexCount = indexCount // 2 * 3
 
             else:
                 raise NotImplementedError(
-                    "Failed getting triangles. Submesh topology is lines or points."
-                )
+                    "Failed getting triangles. Submesh topology is lines or points.")
 
     def InitMSkin(self):
         self.m_Skin = [BoneWeights4() for _ in range(self.m_VertexCount)]
@@ -902,28 +892,70 @@ class Mesh(NamedObject):
 
 class MeshHelper:
     @staticmethod
-    def GetFormatSize(format: int) -> int:
-        if format in [
-            VertexFormat.kVertexFormatFloat,
-            VertexFormat.kVertexFormatUInt32,
-            VertexFormat.kVertexFormatSInt32,
-        ]:
-            return 4
-        elif format in [
-            VertexFormat.kVertexFormatFloat16,
-            VertexFormat.kVertexFormatUNorm16,
-            VertexFormat.kVertexFormatSNorm16,
-            VertexFormat.kVertexFormatUInt16,
-            VertexFormat.kVertexFormatSInt16,
-        ]:
-            return 2
-        elif format in [
-            VertexFormat.kVertexFormatUNorm8,
-            VertexFormat.kVertexFormatSNorm8,
-            VertexFormat.kVertexFormatUInt8,
-            VertexFormat.kVertexFormatSInt8,
-        ]:
-            return 1
+    def GetFormatSize(version, format: int) -> int:
+        if version[0] < 2017:
+            if format == VertexChannelFormat.kChannelFormatFloat:
+                return 4
+            elif format == VertexChannelFormat.kChannelFormatFloat16:
+                return 2
+            elif format == VertexChannelFormat.kChannelFormatColor:  # in 4.x is size 4
+                return 1
+            elif format == VertexChannelFormat.kChannelFormatByte:
+                return 1
+            elif format == VertexChannelFormat.kChannelFormatUInt32:  # in 5.x
+                return 4
+        elif version[0] < 2019:
+            if format == VertexFormat.kVertexFormatFloat:
+                return 4
+            elif format == VertexFormat.kVertexFormatFloat16:
+                return 2
+            elif format == VertexFormat.kVertexFormatColor:
+                return 1
+            elif format == VertexFormat.kVertexFormatUNorm8:
+                return 1
+            elif format == VertexFormat.kVertexFormatSNorm8:
+                return 1
+            elif format == VertexFormat.kVertexFormatUNorm16:
+                return 2
+            elif format == VertexFormat.kVertexFormatSNorm16:
+                return 2
+            elif format == VertexFormat.kVertexFormatUInt8:
+                return 1
+            elif format == VertexFormat.kVertexFormatSInt8:
+                return 1
+            elif format == VertexFormat.kVertexFormatUInt16:
+                return 2
+            elif format == VertexFormat.kVertexFormatSInt16:
+                return 2
+            elif format == VertexFormat.kVertexFormatUInt32:
+                return 4
+            elif format == VertexFormat.kVertexFormatSInt32:
+                return 4
+        else:
+            if format == VertexFormatV2019.kVertexFormatFloat:
+                return 4
+            elif format == VertexFormatV2019.kVertexFormatFloat16:
+                return 2
+            elif format == VertexFormatV2019.kVertexFormatUNorm8:
+                return 1
+            elif format == VertexFormatV2019.kVertexFormatSNorm8:
+                return 1
+            elif format == VertexFormatV2019.kVertexFormatUNorm16:
+                return 2
+            elif format == VertexFormatV2019.kVertexFormatSNorm16:
+                return 2
+            elif format == VertexFormatV2019.kVertexFormatUInt8:
+                return 1
+            elif format == VertexFormatV2019.kVertexFormatSInt8:
+                return 1
+            elif format == VertexFormatV2019.kVertexFormatUInt16:
+                return 2
+            elif format == VertexFormatV2019.kVertexFormatSInt16:
+                return 2
+            elif format == VertexFormatV2019.kVertexFormatUInt32:
+                return 4
+            elif format == VertexFormatV2019.kVertexFormatSInt32:
+                return 4
         raise ValueError(format)
 
     @staticmethod
@@ -936,86 +968,22 @@ class MeshHelper:
             return format >= 6
 
     @staticmethod
-    def BytesToFloatArray(inputBytes, size, vformat: "VertexFormat") -> List[float]:
-        if vformat == VertexFormat.kVertexFormatFloat:
-            return struct.unpack(f">{'f'*(len(inputBytes)//4)}", inputBytes)
-        elif vformat == VertexFormat.kVertexFormatFloat16:
-            return struct.unpack(f">{'e'*(len(inputBytes)//2)}", inputBytes)
-        elif vformat == VertexFormat.kVertexFormatUNorm8:
-            return [byte / 255.0 for byte in inputBytes]
-        elif vformat == VertexFormat.kVertexFormatSNorm8:
-            return [max(((byte - 128) / 127.0), -1.0) for byte in inputBytes]
-        elif vformat == VertexFormat.kVertexFormatUNorm16:
-            return [
-                x / 65535.0
-                for x in struct.unpack(f">{'H'*(len(inputBytes)//2)}", inputBytes)
-            ]
-        elif vformat == VertexFormat.kVertexFormatSNorm16:
-            return [
-                max(((x - 32768) / 32767.0), -1.0)
-                for x in struct.unpack(f">{'h'*(len(inputBytes)//2)}", inputBytes)
-            ]
+    def BytesToFloatArray(inputBytes, size):
+        return [
+            inputBytes[i] / 255.0 if size == 1 else
+            struct.unpack(">e", inputBytes[i * 2: i * 2 + 2])[0] if size == 2 else
+            struct.unpack(">f", inputBytes[i * 4: i * 4 + 4])[0] if size == 4 else
+            0
+            for i in range(len(inputBytes) // size)
+        ]
 
     @staticmethod
     def BytesToIntArray(inputBytes, size):
-        if size == 1:
-            return [x for x in inputBytes]
-        elif size == 2:
-            return [
-                x for x in struct.unpack(f">{'h'*(len(inputBytes)//2)}", inputBytes)
-            ]
-        elif size == 4:
-            return [
-                x for x in struct.unpack(f">{'i'*(len(inputBytes)//4)}", inputBytes)
-            ]
-
-    @staticmethod
-    def ToVertexFormat(format: int, version: List[int]) -> "VertexFormat":
-        if version[0] < 2017:
-            if format == VertexChannelFormat.kChannelFormatFloat:
-                return VertexFormat.kVertexFormatFloat
-            elif format == VertexChannelFormat.kChannelFormatFloat16:
-                return VertexFormat.kVertexFormatFloat16
-            elif format == VertexChannelFormat.kChannelFormatColor:  # in 4.x is size 4
-                return VertexFormat.kVertexFormatUNorm8
-            elif format == VertexChannelFormat.kChannelFormatByte:
-                return VertexFormat.kVertexFormatUInt8
-            elif format == VertexChannelFormat.kChannelFormatUInt32:  # in 5.x
-                return VertexFormat.kVertexFormatUInt32
-            else:
-                raise ValueError(f"Failed to convert {format.name} to VertexFormat")
-        elif version[0] < 2019:
-            if format == VertexFormat2017.kVertexFormatFloat:
-                return VertexFormat.kVertexFormatFloat
-            elif format == VertexFormat2017.kVertexFormatFloat16:
-                return VertexFormat.kVertexFormatFloat16
-            elif (
-                format == VertexFormat2017.kVertexFormatColor
-                or format == VertexFormat2017.kVertexFormatUNorm8
-            ):
-                return VertexFormat.kVertexFormatUNorm8
-            elif format == VertexFormat2017.kVertexFormatSNorm8:
-                return VertexFormat.kVertexFormatSNorm8
-            elif format == VertexFormat2017.kVertexFormatUNorm16:
-                return VertexFormat.kVertexFormatUNorm16
-            elif format == VertexFormat2017.kVertexFormatSNorm16:
-                return VertexFormat.kVertexFormatSNorm16
-            elif format == VertexFormat2017.kVertexFormatUInt8:
-                return VertexFormat.kVertexFormatUInt8
-            elif format == VertexFormat2017.kVertexFormatSInt8:
-                return VertexFormat.kVertexFormatSInt8
-            elif format == VertexFormat2017.kVertexFormatUInt16:
-                return VertexFormat.kVertexFormatUInt16
-            elif format == VertexFormat2017.kVertexFormatSInt16:
-                return VertexFormat.kVertexFormatSInt16
-            elif format == VertexFormat2017.kVertexFormatUInt32:
-                return VertexFormat.kVertexFormatUInt32
-            elif format == VertexFormat2017.kVertexFormatSInt32:
-                return VertexFormat.kVertexFormatSInt32
-            else:
-                raise ValueError(f"Failed to convert {format.name} to VertexFormat")
-        else:
-            return VertexFormat(format)
+        return [
+            int.from_bytes(inputBytes[i: i + size],
+                           byteorder="big", signed=True)
+            for i in range(0, len(inputBytes), size)
+        ]
 
 
 class VertexChannelFormat(IntEnum):
@@ -1026,7 +994,7 @@ class VertexChannelFormat(IntEnum):
     kChannelFormatUInt32 = 4
 
 
-class VertexFormat2017(IntEnum):
+class VertexFormat(IntEnum):
     kVertexFormatFloat = 0
     kVertexFormatFloat16 = 1
     kVertexFormatColor = 2
@@ -1042,7 +1010,7 @@ class VertexFormat2017(IntEnum):
     kVertexFormatSInt32 = 12
 
 
-class VertexFormat(IntEnum):
+class VertexFormatV2019(IntEnum):
     kVertexFormatFloat = 0
     kVertexFormatFloat16 = 1
     kVertexFormatUNorm8 = 2

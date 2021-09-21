@@ -4,6 +4,7 @@ from ..export import Texture2DConverter
 from ..helpers.ResourceReader import get_resource_data
 from ..streams import EndianBinaryWriter
 from PIL import Image
+from io import BufferedIOBase, RawIOBase, IOBase
 
 
 class Texture2D(Texture):
@@ -15,13 +16,17 @@ class Texture2D(Texture):
     def image(self, img):
         # img is PIL.Image / image path / opened file
         # overwrite original image data with the RGB(A) image data and sets the correct new format
-        _img, tex_format = Texture2DConverter.image_to_texture2d(img)
-        if _img is None:
+        if img is None:
             raise Exception("No image provided")
 
-        self.image_data = _img.tobytes()
+        if (isinstance(img, str) or isinstance(img, BufferedIOBase) or
+                isinstance(img, RawIOBase) or isinstance(img, IOBase)):
+            img = Image.open(img)
+
+        img_data, tex_format = Texture2DConverter.image_to_texture2d(img)
+        self.image_data = img_data
         # width * height * channel count
-        self.m_CompleteImageSize = len(self._image_data)# _img.width * _img.height * len(_img.getbands())
+        self.m_CompleteImageSize = len(self._image_data)# img.width * img.height * len(img.getbands())
         self.m_TextureFormat = tex_format
 
     @property
@@ -29,17 +34,17 @@ class Texture2D(Texture):
         return self._image_data
 
     def reset_streamdata(self):
-        if self.m_StreamData:
-            self.m_StreamData.offset = 0
-            self.m_StreamData.size = 0
-            self.m_StreamData.path = ""
+        if not self.m_StreamData: return
+        self.m_StreamData.offset = 0
+        self.m_StreamData.size = 0
+        self.m_StreamData.path = ""
 
     @image_data.setter
     def image_data(self, data: bytes):
         self._image_data = data
         # prefer writing to cab if possible
         if self.m_StreamData:
-            cab = None#self.assets_file.get_writeable_cab()
+            cab = self.assets_file.get_writeable_cab()
             if cab:
                 self.m_StreamData.offset = cab.Position
                 cab.write(data)
@@ -51,17 +56,17 @@ class Texture2D(Texture):
     def set_image(
         self, img, target_format: TextureFormat = None, in_cab: bool = False
     ):
-        _img, tex_format = Texture2DConverter.image_to_texture2d(img)
-        if _img is None:
+        if img is None:
             raise Exception("No image provided")
-        if in_cab:
-            self.image_data = _img.tobytes()
-        else:
-            self._image_data = _img.tobytes()
-            self.reset_streamdata()
+        img_data, tex_format = Texture2DConverter.image_to_texture2d(img)
 
+        if in_cab:
+            self.image_data = img_data
+        else:
+            self._image_data = img_data
+            self.reset_streamdata()
         # width * height * channel count
-        self.m_CompleteImageSize = len(self._image_data)#_img.width * _img.height * len(_img.getbands())
+        self.m_CompleteImageSize = len(self._image_data)#img.width * img.height * len(img.getbands())
         self.m_TextureFormat = tex_format
 
     def __init__(self, reader):

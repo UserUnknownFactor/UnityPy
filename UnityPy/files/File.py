@@ -11,26 +11,19 @@ DirectoryInfo = namedtuple("DirectoryInfo", "path offset size")
 class File(object):
     name: str
     files: dict
-    environment: "Environment"
     cab_file: str
     is_changed: bool
     signature: str
     packer: str
-    is_dependency: bool
 
     # parent: File
-    # environment: Environment
 
-    def __init__(self, parent=None, name: str = None, is_dependency: bool = False):
+    def __init__(self, parent=None, name=None):
         self.files = {}
         self.is_changed = False
         self.cab_file = "CAB-UnityPy_Mod.resS"
         self.parent = parent
-        self.environment = self.environment = (
-            getattr(parent, "environment", parent) if parent else None
-        )
-        self.name = basename(name) if isinstance(name, str) else ""
-        self.is_dependency = is_dependency
+        self.name = basename(name) if isinstance(name, str) else None
 
     def get_assets(self):
         if isinstance(self, SerializedFile.SerializedFile):
@@ -72,17 +65,22 @@ class File(object):
         for node in files:
             reader.Position = node.offset
             name = node.path
-            node_reader = EndianBinaryReader(
-                reader.read(node.size), offset=(reader.BaseOffset + node.offset)
-            )
-            f = ImportHelper.parse_file(
-                node_reader, self.parent, name, is_dependency=self.is_dependency
-            )
-
-            if isinstance(f, (EndianBinaryReader, SerializedFile.SerializedFile)):
-                if self.environment:
-                    self.environment.register_cab(name, f)
-
+            f = EndianBinaryReader(reader.read(node.size), offset=(
+                reader.BaseOffset + node.offset))
+            # f._flag = getattr(node, "flags", None)  # required for save
+            typ, _ = ImportHelper.check_file_type(f)
+            if typ == FileType.BundleFile:
+                f = BundleFile.BundleFile(f, self, name=name)
+            elif typ == FileType.WebFile:
+                f = WebFile.WebFile(f, self, name=name)
+            elif typ == FileType.AssetsFile:
+                # pre-check if resource file
+                if not name.endswith((".resS", ".resource", ".config", ".xml", ".dat")):
+                    # try to load the file as serialized file
+                    try:
+                        f = SerializedFile.SerializedFile(f, self, name=name)
+                    except ValueError:
+                        pass
             # required for BundleFiles
             f.flags = getattr(node, "flags", 0)
             self.files[name] = f
@@ -104,18 +102,10 @@ class File(object):
                 return self.files[name]
             else:
                 raise ValueError(
-                    "This cab already exists and isn't an EndianBinaryWriter"
-                )
+                    "This cab already exists and isn't an EndianBinaryWriter")
 
         writer = EndianBinaryWriter()
-        # try to find another resource file to copy the flags from
-        for fname, f in self.files.items():
-            if fname.endswith(".resS"):
-                writer.flags = f.flags
-                writer.endian = f.endian
-                break
-        else:
-            writer.flags = 0
+        writer.flags = 4
         writer.name = name
         self.files[name] = writer
         return writer

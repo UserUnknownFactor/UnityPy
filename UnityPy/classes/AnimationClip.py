@@ -7,11 +7,6 @@ from ..enums import ClassIDType
 from ..math import Quaternion, Vector3
 from ..streams import EndianBinaryReader
 
-try:
-    from UnityPy import UnityPyBoost
-except ImportError:
-    UnityPyBoost = None
-
 
 def uint(num):
     if num < 0 or num > 4294967295:
@@ -81,24 +76,11 @@ class PackedFloatVector:
         start: int = 0,
         numChunks: int = -1,
     ):
-        if UnityPyBoost:
-            return UnityPyBoost.unpack_floats(
-                self.m_NumItems,
-                self.m_Range,
-                self.m_Start,
-                bytes(self.m_Data),
-                self.m_BitSize,
-                itemCountInChunk,
-                chunkStride,
-                start,
-                numChunks,
-            )
-
         bitPos: int = self.m_BitSize * start
         indexPos: int = bitPos // 8
         bitPos %= 8
 
-        scale: float = (1.0 / self.m_Range) if self.m_Range else float("inf")
+        scale: float = (1.0 / self.m_Range) if self.m_Range else float('inf')
         if numChunks == -1:
             numChunks = self.m_NumItems // itemCountInChunk
         end = int(chunkStride * numChunks / 4)
@@ -120,7 +102,8 @@ class PackedFloatVector:
 
                 x &= uint((1 << self.m_BitSize) - 1)  # (uint)(1 << m_BitSize) - 1u
                 denomi = scale * ((1 << self.m_BitSize) - 1)
-                data.append((x / denomi if denomi else float("inf")) + self.m_Start)
+                data.append( (x / denomi if denomi else float('inf')) + self.m_Start)
+
         return data
 
 
@@ -146,26 +129,23 @@ class PackedIntVector:
         writer.align_stream()
 
     def UnpackInts(self):
-        if UnityPyBoost:
-            return UnityPyBoost.unpack_ints(
-                self.m_NumItems, bytes(self.m_Data), self.m_BitSize
-            )
-
         data = [0] * self.m_NumItems
         indexPos = 0
         bitPos = 0
+        m_BitSize = self.m_BitSize
+
         for i in range(self.m_NumItems):
             bits = 0
-            data[i] = 0
-            while bits < self.m_BitSize:
-                data[i] |= (self.m_Data[indexPos] >> bitPos) << bits
-                num = min(self.m_BitSize - bits, 8 - bitPos)
+            entry = 0
+            while bits < m_BitSize:
+                entry |= (self.m_Data[indexPos] >> bitPos) << bits
+                num = min(m_BitSize - bits, 8 - bitPos)
                 bitPos += num
                 bits += num
-                if bitPos == 8:
+                if bitPos == 8:  #
                     indexPos += 1
                     bitPos = 0
-            data[i] &= (1 << self.m_BitSize) - 1
+            data.append(entry & (1 << m_BitSize) - 1)
         return data
 
 
@@ -178,7 +158,7 @@ class PackedQuatVector:
 
     def UnpackQuats(self):
         m_Data = self.m_Data
-        data = [None] * self.m_NumItems
+        data = [None]*self.m_NumItems
         indexPos = 0
         bitPos = 0
 
@@ -362,7 +342,7 @@ class StreamedCurveKey:
         """
         # Stepped
         if self.coeff[0] == 0 and self.coeff[1] == 0 and self.coeff[2] == 0:
-            return float("inf")
+            return float('inf')
 
         dx = max(dx, 0.0001)
         dy = rhs.value - self.value
@@ -386,7 +366,9 @@ class StreamedClip:
 
     def ReadData(self):
         frameList = []
-        buffer = b"".join(val.to_bytes(4, "big") for val in self.data)
+        buffer = b"".join(
+            val.to_bytes(4, 'big') for val in self.data
+        )
         reader = EndianBinaryReader(buffer)
         while reader.Position < reader.Length:
             frameList.append(StreamedFrame(reader))
