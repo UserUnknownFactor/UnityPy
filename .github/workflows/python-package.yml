@@ -1,96 +1,71 @@
 name: Test and Publish
 
-on: [push, pull_request, workflow_dispatch]
+on: [push, pull_request]
+
 
 jobs:
-    test:
-        strategy:
-            fail-fast: false
-            matrix:
-                os: ["ubuntu-latest", "macOS-latest", "windows-latest"]
+  deploy:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [
+          "ubuntu-latest",
+          "macOS-latest",
+          "windows-latest"
+        ]
+        python-version: [
+          "3.9",
+          "3.8",
+          "3.7",
+          "3.6",
+        ]
+        architecture: ["x86", "x64"]
+    
+    timeout-minutes: 30
 
-        runs-on: ${{ matrix.os }}
-        name: ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    name: ${{ matrix.os }} ${{ matrix.architecture }} - ${{ matrix.python-version }}
+    env:
+      DEPENDENCIES: lz4 brotli Pillow texture2ddecoder tabulate
 
-        steps:
-            - uses: actions/checkout@v3
+    steps:
+    - uses: actions/checkout@v2
 
-            - name: Set up Python
-              uses: actions/setup-python@v4
-              with:
-                  python-version: "3.7"
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v1
+      with:
+        python-version: ${{ matrix.python-version }}
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install --upgrade wheel setuptools twine
+        pip install pytest ${{ env.DEPENDENCIES }}
+    
+    - name: Install module
+      run: |
+        python setup.py install
+    
+    - name: Test with pytest
+      run: |
+        pytest -v -s
+      
+    - name: Build Python wheel
+      if: success() && runner.os != 'Linux' && github.event_name == 'push'
+      run: |
+        python setup.py sdist bdist_wheel
 
-            - name: Install Dependencies
-              run: |
-                  python -m pip install --upgrade pip pytest
-
-            - name: Install UnityPy
-              run: |
-                  pip install .
-
-            - name: Run tests
-              run: |
-                  pytest -v -s
-
-    release:
-        needs: [test]
-        strategy:
-            fail-fast: false
-            matrix:
-                os: ["ubuntu-20.04", "windows-2019", "macos-11"]
-                cp: ["cp37", "cp38", "cp39", "cp310", "cp311"]
-
-        timeout-minutes: 30
-
-        runs-on: ${{ matrix.os }}
-        name: ${{ matrix.os }} - ${{ matrix.cp }}
-
-        steps:
-            - uses: actions/checkout@v3
-
-            - name: Set up Python
-              uses: actions/setup-python@v4
-              with:
-                  python-version: "3.10"
-
-            - name: Install dependencies
-              run: |
-                  python -m pip install --upgrade pip wheel setuptools
-                  python -m pip install --upgrade twine build
-
-            - name: Set up QEMU
-              if: runner.os == 'Linux'
-              uses: docker/setup-qemu-action@v2
-              with:
-                  platforms: all
-
-            - name: Build wheels
-              uses: pypa/cibuildwheel@v2.11.2
-              env:
-                  CIBW_ARCHS_LINUX: auto aarch64
-                  CIBW_ARCHS_MACOS: x86_64 arm64 universal2
-                  CIBW_BUILD: |
-                    ${{ matrix.cp }}-manylinux_x86_64
-                    ${{ matrix.cp }}-manylinux_i686
-                    ${{ matrix.cp }}-manylinux_aarch64
-                    ${{ matrix.cp }}-win_amd64
-                    ${{ matrix.cp }}-win32
-                    ${{ matrix.cp }}-macosx_x86_64
-                    ${{ matrix.cp }}-macosx_arm64
-                    ${{ matrix.cp }}-macosx_universal2
-                  # Disabled repair wheel since the fmob lib is not compatible
-                  CIBW_REPAIR_WHEEL_COMMAND: ""
-                  CIBW_REPAIR_WHEEL_COMMAND_LINUX: 'mv {wheel} {dest_dir}/"$(basename {wheel} | sed "s/-linux_/-manylinux_2_17_/")"'
-                  CIBW_TEST_REQUIRES: pytest
-                  CIBW_TEST_COMMAND: pytest -v -s {package}/tests
-                  CIBW_TEST_SKIP: "*-macosx_arm64 *-macosx_universal2:arm64"
-
-            - name: Publish to PyPI
-              if: success() && github.event_name == 'push' && env.TWINE_PASSWORD != '' && github.ref == 'refs/heads/master'
-              env:
-                  TWINE_USERNAME: __token__
-                  TWINE_PASSWORD: ${{ secrets.PYPI_TOKEN }}
-              run: |
-                  twine upload ./wheelhouse/*.whl --skip-existing
-                  python -m build --sdist
-                  twine upload ./dist/*.tar.gz --skip-existing
+    - name: Build manylinux Python wheels
+      if: success() && runner.os == 'Linux' && github.event_name == 'push'
+      uses: RalfG/python-wheels-manylinux-build@v0.3.3-manylinux2010_x86_64
+      with:
+        python-versions: 'cp36-cp36m cp37-cp37m cp38-cp38 cp39-cp39'
+        build-requirements: ${{ env.DEPENDENCIES }}
+    
+    - name: Publish wheels to PyPI
+      if: success() && github.event_name == 'push' && env.TWINE_PASSWORD != ''
+      env:
+        TWINE_USERNAME: __token__
+        TWINE_PASSWORD: ${{ secrets.PYPI_TOKEN }}
+      run: |
+        twine upload dist/* --skip-existing

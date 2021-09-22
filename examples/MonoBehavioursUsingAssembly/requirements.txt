@@ -1,0 +1,4 @@
+UnityPy
+clr_loader
+tqdm
+git+https://github.com/pythonnet/pythonnet.git

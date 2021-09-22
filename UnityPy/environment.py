@@ -148,15 +148,9 @@ class Environment:
 
     def process(self, obj_modify: Callable, types: list=DEFAULT_TYPES, **kwargs):
         """Accept modification function `obj_modify => obj_modify(obj, asset, local_path) to modify `types` """
-        all_assets = self.files
-        for f in self.files:
-            is_bundle = len(self.assets) > 1
-            if is_bundle:
-                all_assets = self.progress_function(self.assets)
-
-            for asset in all_assets:
-                asset_name = asset.name
-
+        is_bundle = len(self.assets) > 1
+        for f in list(self.files):
+            for asset in list(self.assets):
                 # filter objects and put Texture2Ds at the end of the list
                 objs = sorted((obj for obj in asset.get_objects(
                 ) if obj.type.name in types), key=lambda x: 1 if x.type == "Texture2D" else 0)
@@ -166,16 +160,33 @@ class Environment:
                 num_cont = sum(cobjs)
                 num_objs = len(objs)
 
+                if is_bundle:
+                    asset_name = os.path.basename(asset.name)
+                else:
+                    asset_name = os.path.basename(f)
+
                 # check if container contains all important assets, if yes, just ignore the container
                 if num_objs <= num_cont * 2:
+                    if num_cont > 1:
+                        all_cobjs = self.progress_function(cobjs)
+                        if is_bundle:
+                            all_cobjs.postfix = asset_name
+                    else:
+                        all_cobjs = cobjs
                     for asset_path, obj in cobjs:
                         fp = os.path.join(self.out_path, *asset_path.split('/')
                                         [self.ignore_dir_lvls:])
                         if obj.type in types:
-                            obj_modify(obj, asset, local_path=local_path, **kwargs)
+                            obj_modify(obj, asset_name, local_path=local_path, **kwargs)
                 # otherwise use the container to generate a path for the normal objects
                 else:
                     extracted = []
+                    if num_objs > 1:
+                        all_objs = self.progress_function(objs)
+                        if is_bundle:
+                            all_objs.postfix = asset_name
+                    else:
+                        all_objs = objs
                     # find the most common path
                     occurence_count = Counter(os.path.splitext(asset_path)[
                                             0] for asset_path in asset.container.keys())
@@ -184,12 +195,9 @@ class Environment:
                         local_path = os.path.join(
                             self.out_path, *occurence_count.most_common(1)[0][0].split('/')[self.ignore_dir_lvls:])
 
-                    if not is_bundle:
-                        all_values = self.progress_function(all_values)
-
-                    for obj in objs:
+                    for obj in all_objs:
                         if obj.path_id not in extracted:
-                            extracted.extend(obj_modify(obj, asset, local_path=local_path, **kwargs))
+                            extracted.extend(obj_modify(obj, asset_name, local_path=local_path, **kwargs))
 
 
     @property

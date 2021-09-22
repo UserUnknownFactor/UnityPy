@@ -1,5 +1,4 @@
 import os
-
 import UnityPy
 from PIL import Image
 
@@ -20,10 +19,12 @@ def test_read_batch():
 
 
 def test_texture2d():
+    import UnityPy
+
     for f in os.listdir(SAMPLES):
         env = UnityPy.load(os.path.join(SAMPLES, f))
         for obj in env.objects:
-            if obj.type.name == "Texture2D":
+            if obj.type == "Texture2D":
                 data = obj.read()
                 data.image.save("test.png")
                 data.image = data.image.transpose(Image.ROTATE_90)
@@ -31,65 +32,36 @@ def test_texture2d():
 
 
 def test_sprite():
+    import UnityPy
+
     for f in os.listdir(SAMPLES):
         env = UnityPy.load(os.path.join(SAMPLES, f))
         for obj in env.objects:
-            if obj.type.name == "Sprite":
+            if obj.type == "Sprite":
                 obj.read().image.save("test.png")
 
 
 def test_audioclip():
-    # as not platforms are supported by FMOD
-    # we have to check if the platform is supported first
-    try:
-        UnityPy.export.AudioClipConverter.import_pyfmodex()
-    except NotImplementedError:
-        return
-    except OSError:
-        # cibuildwheel doesn't copy the .so files
-        # so we have to skip the test on it
-        print("Failed to load the fmod lib for your system.")
-        print("Skipping the audioclip test.")
-        return
-    if UnityPy.export.AudioClipConverter.pyfmodex is False:
-        return
+    import UnityPy
+
     env = UnityPy.load(os.path.join(SAMPLES, "char_118_yuki.ab"))
     for obj in env.objects:
-        if obj.type.name == "AudioClip":
+        if obj.type == "AudioClip":
             clip = obj.read()
             assert len(clip.samples) == 1
 
 
 def test_mesh():
     env = UnityPy.load(os.path.join(SAMPLES, "xinzexi_2_n_tex"))
-    with open(os.path.join(SAMPLES, "xinzexi_2_n_tex_mesh"), "rb") as f:
-        wanted = f.read().replace(b"\r", b"")
+    with open(os.path.join(SAMPLES, 'xinzexi_2_n_tex_mesh'), 'rb') as f:
+        wanted = f.read().replace(b'\r', b'')
     for obj in env.objects:
-        if obj.type.name == "Mesh":
+        if obj.type == "Mesh":
             mesh = obj.read()
             data = mesh.export()
             if isinstance(data, str):
-                data = data.encode("utf8").replace(b"\r", b"")
+                data = data.encode('utf8').replace(b'\r', b'')
             assert data == wanted
-
-
-def test_read_typetree():
-    env = UnityPy.load(SAMPLES)
-    for obj in env.objects:
-        obj.read_typetree()
-
-
-def test_save():
-    env = UnityPy.load(SAMPLES)
-    # TODO - check against original
-    # this only makes sure
-    # that the save function still produces a readable file
-    for name, file in env.files.items():
-        if isinstance(file, UnityPy.streams.EndianBinaryReader):
-            continue
-        save1 = file.save()
-        save2 = UnityPy.load(save1).file.save()
-        assert save1 == save2
 
 
 if __name__ == "__main__":
