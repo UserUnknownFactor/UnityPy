@@ -1,7 +1,7 @@
 from .Behaviour import Behaviour
 from .PPtr import PPtr, save_ptr
 from ..streams import EndianBinaryReader, EndianBinaryWriter
-import UnityPy.exceptions
+from ..exceptions import TypeTreeError as TypeTreeError
 
 class MonoBehaviour(Behaviour):
     def __init__(self, reader: EndianBinaryReader):
@@ -39,3 +39,4 @@ class MonoBehaviour(Behaviour):
         reader = self.reader
         reader.Position = self._raw_offset
         return reader.read_bytes(reader.byte_size - (self._raw_offset - reader.byte_start))
+

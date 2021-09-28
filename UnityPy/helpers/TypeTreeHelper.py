@@ -3,7 +3,7 @@ from UnityPy.streams import EndianBinaryReader, EndianBinaryWriter
 from ctypes import c_uint32
 import base64
 import tabulate
-from UnityPy.exceptions import TypeTreeError as TypeTreeError
+from ..exceptions import TypeTreeError as TypeTreeError
 
 '''
 Example Nodes:
@@ -428,9 +428,10 @@ def write_value(value, nodes: list, writer: EndianBinaryWriter, i: c_uint32):
     if align:
         writer.align_stream()
 
-def node_dict_to_class(nodes: list):
-    class Fake:
-        def __init__(self, data) -> None:
-            self.__dict__ = data
+class FakeNode:
+    def __init__(self, data) -> None:
+        self.__dict__ = data
 
-    return [Fake(node) for node in nodes]
+def node_dict_to_class(nodes: list):
+    return [FakeNode(node) for node in nodes]
+

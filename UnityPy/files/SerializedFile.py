@@ -75,7 +75,7 @@ class FileIdentifier:  # external
         writer.write_string_to_null(self.path)
 
 
-class TypeTreeNode:
+class TypeTreeNode(dict):
     type: str
     name: str
     byte_size: int
@@ -608,3 +608,4 @@ def read_string(string_buffer_reader: EndianBinaryReader, value: int) -> str:
         return CommonString[offset]
 
     return str(offset)
+

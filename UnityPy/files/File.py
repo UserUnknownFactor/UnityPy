@@ -23,7 +23,7 @@ class File(object):
         self.is_changed = False
         self.cab_file = "CAB-UnityPy_Mod.resS"
         self.parent = parent
-        self.name = basename(name) if isinstance(name, str) else None
+        self.name = basename(name) if isinstance(name, str) else ''
 
     def get_assets(self):
         if isinstance(self, SerializedFile.SerializedFile):

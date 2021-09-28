@@ -200,13 +200,13 @@ class ObjectReader:
 
     def read_typetree(self, nodes: list = None) -> dict:
         self.reset()
+        tree = {}
         if nodes:
             tree = TypeTreeHelper.read_typetree(nodes, self)
         elif getattr(self.serialized_type, "nodes", None):
-            tree = TypeTreeHelper.read_typetree(
-                self.serialized_type.nodes, self)
-        else:
-            tree = {}
+            if self.serialized_type.nodes:
+                tree = TypeTreeHelper.read_typetree(
+                    self.serialized_type.nodes, self)
         return tree
 
     def save_typetree(self, tree: dict, nodes: list = None, writer: EndianBinaryWriter = None):
@@ -234,3 +234,4 @@ class ObjectReader:
         self.data = data
         if self.assets_file:
             self.assets_file.mark_changed()
+

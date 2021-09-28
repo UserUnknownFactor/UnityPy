@@ -4,7 +4,7 @@ from ..helpers import TypeTreeHelper
 from ..streams import EndianBinaryWriter
 from ..files import ObjectReader
 import types
-
+from ..exceptions import TypeTreeError as TypeTreeError
 
 class Object(object):
     type_tree: dict
@@ -178,3 +178,4 @@ class NodeHelper:
 
     def __repr__(self):
         return "<NodeHelper - %s>" % self.__dict__.__repr__()
+

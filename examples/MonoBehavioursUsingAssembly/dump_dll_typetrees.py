@@ -90,13 +90,6 @@ def create_generator(dll_folder: str):
     return g
 
 
-class FakeNode:
-    """A minimal fake Node class for use in UnityPy."""
-
-    def __init__(self, **kwargs):
-        self.__dict__.update(**kwargs)
-
-
 def generate_tree(
     g: "Generator",
     assembly: str,
