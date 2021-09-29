@@ -304,11 +304,6 @@ class SerializedFile(File.File):
         version_split = re.split(r"\D", string_version)
         self.version = tuple(int(x) for x in version_split)
 
-    def mark_changed(self):
-        self.is_changed = True
-        if self.parent:
-            self.parent.mark_changed()
-
     def read_type_tree(self, type_tree):
         level_stack = [[0,1]]
         while level_stack:
@@ -396,7 +391,7 @@ class SerializedFile(File.File):
 
         return cab
 
-    def save(self) -> bytes:
+    def save(self, packer: str=None) -> bytes:
         # 1. header -> has to be delayed until the very end
         # 2. data -> types, objects, scripts, ...
 

@@ -12,7 +12,7 @@ from .streams import EndianBinaryReader
 from .files import SerializedFile
 
 IGNORE_DIR_COUNT = 0
-DEFAULT_TYPES = ['MonoBehaviour', 'Texture2D', 'TextAsset']
+DEFAULT_TYPES = ['MonoBehaviour', 'Texture2D', 'TextAsset', 'PlayerSettings']
 
 def default_progress(skip_progress):
     return skip_progress
@@ -275,3 +275,4 @@ class Environment:
 
     def get(self, key, default=None):
         return getattr(self, key, default)
+
