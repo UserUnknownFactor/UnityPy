@@ -187,13 +187,17 @@ class SerializedFile(File.File):
 
     @property
     def files(self):
-        return self.objects
+        if self.objects:
+            return self.objects
+        return dict()
+
+    @files.setter
+    def files(self, value):
+        self.objects = value
 
     def __init__(self, reader: EndianBinaryReader, parent=None, name=None):
+        super().__init__(parent=parent, name=name)
         self.reader = reader
-        self.parent = parent
-        self.name = name
-        self.is_changed = False
 
         self.unity_version = "2.5.0f5"
         self.version = (0, 0, 0, 0)

@@ -200,7 +200,7 @@ class ObjectReader:
 
     def read_typetree(self, nodes: list = None) -> dict:
         self.reset()
-        tree = {}
+        tree = dict()
         if nodes:
             tree = TypeTreeHelper.read_typetree(nodes, self)
         elif getattr(self.serialized_type, "nodes", None):

@@ -19,7 +19,7 @@ class File(object):
     # parent: File
 
     def __init__(self, parent=None, name=None):
-        self.files = {}
+        self.files = dict()
         self.is_changed = False
         self.cab_file = "CAB-UnityPy_Mod.resS"
         self.parent = parent
@@ -145,3 +145,4 @@ class File(object):
 
 # recursive import requires the import down here
 from . import BundleFile, SerializedFile, WebFile, ObjectReader
+

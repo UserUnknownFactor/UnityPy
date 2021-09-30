@@ -14,7 +14,7 @@ Example Nodes:
     "meta_flag": 0
 },
 {
-    "level": 2,
+    "level": 1,
     "type": "int",
     "name": "m_SomeNode",
     "meta_flag": 0

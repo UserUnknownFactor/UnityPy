@@ -27,14 +27,15 @@ class PlayerSettings(Object):
             self.accelerometerFrequency = reader.read_int()
         self.companyName = reader.read_aligned_string()
         self.productName = reader.read_aligned_string()
-        
-    def save(self, writer: EndianBinaryWriter = None):
+        self.the_rest = reader.read_the_rest(reader.byte_size, reader.byte_start)
+
+    def save(self, writer: EndianBinaryWriter = None, raw_data: bytes = None):
         if writer is None:
             writer = EndianBinaryWriter(endian=self.reader.endian)
         if not raw_data:
             ValueError("No raw data given")
-        
-        super().save(writer)
+
+        super().save(writer, intern_call=True)
         version = self.version
         if version >= (5, 4):  # 5.4.0 nad up
             writer.write_bytes(self.productGUID)
@@ -58,6 +59,7 @@ class PlayerSettings(Object):
             writer.write_int(self.accelerometerFrequency)
         writer.write_aligned_string(self.companyName)
         writer.write_aligned_string(self.productName)
+        writer.write_bytes(self.the_rest)
 
         self.set_raw_data(writer.bytes)
 
