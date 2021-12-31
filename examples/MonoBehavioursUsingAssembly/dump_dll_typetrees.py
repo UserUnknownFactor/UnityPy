@@ -105,6 +105,7 @@ def generate_tree(
 
     # Fetch all type definitions
     def_iter = g.getTypeDefs(assembly, class_name, namespace)
+    if not def_iter: return {}
 
     # Create the nodes
     trees = {}

@@ -19,10 +19,12 @@ def default_progress(skip_progress):
 
 class Environment:
     files: dict
+    cabs: dict
     path: str
 
     def __init__(self, *args):
         self.files = {}
+        self.cabs = {}
         self.path = "."
         self.out_path = os.path.join(os.getcwd(), "output")
         self.ignore_dir_lvls = IGNORE_DIR_COUNT
@@ -42,8 +44,7 @@ class Environment:
                         self.load_folder(arg)
                 else:
                     self.path = None
-                    self.files[str(len(self.files))
-                               ] = self.load_file(stream=arg)
+                    self.files[str(len(self.files))] = self.load_file(stream=arg)
 
         if len(self.files) == 1:
             self.file = list(self.files.values())[0]
@@ -64,20 +65,26 @@ class Environment:
     def load(self, files: list):
         """Loads all files into the AssetsManager."""
         for f in files:
-            self.files[f[len(self.path):].lstrip(
-                "/\\")] = self.load_file(open(f, "rb"), self)
+            self.files[f[len(self.path) :].lstrip("/\\")] = self.load_file(
+                open(f, "rb"), self
+            )
 
     def load_file(self, stream, parent=None):
         if not parent:
             parent = self
         typ, reader = ImportHelper.check_file_type(stream)
         #try:
+        stream_name = getattr(
+            stream,
+            "name",
+            str(stream.__hash__()) if hasattr(stream, "__hash__") else "",
+        )
         if typ == FileType.AssetsFile:
-            return files.SerializedFile(reader, parent, name=stream.name)
+            return files.SerializedFile(reader, parent, name=stream_name)
         elif typ == FileType.BundleFile:
-            return files.BundleFile(reader, parent, name=stream.name)
+            return files.BundleFile(reader, parent, name=stream_name)
         elif typ == FileType.WebFile:
-            return files.WebFile(reader, parent, name=stream.name)
+            return files.WebFile(reader, parent, name=stream_name)
         elif typ == FileType.ZIP:
             self.load_zip_file(stream)
         elif typ == FileType.ResourceFile:
@@ -143,7 +150,9 @@ class Environment:
         """
         for f in self.files:
             if self.files[f].is_changed:
-                with open(os.path.join(self.out_path, os.path.basename(f)), 'wb') as out:
+                with open(
+                    os.path.join(self.out_path, os.path.basename(f)), "wb"
+                ) as out:
                     out.write(self.files[f].save(packer=pack))
 
     def process(self, obj_modify: Callable, types: list=DEFAULT_TYPES, **kwargs):
@@ -170,7 +179,7 @@ class Environment:
                     if num_cont > 1:
                         all_cobjs = self.progress_function(cobjs)
                         if is_bundle:
-                            all_cobjs.postfix = asset_name
+                            postfix = asset_name
                     else:
                         all_cobjs = cobjs
                     for asset_path, obj in cobjs:
@@ -184,7 +193,7 @@ class Environment:
                     if num_objs > 1:
                         all_objs = self.progress_function(objs)
                         if is_bundle:
-                            all_objs.postfix = asset_name
+                            postfix = asset_name
                     else:
                         all_objs = objs
                     # find the most common path
@@ -201,7 +210,7 @@ class Environment:
 
 
     @property
-    def objects(self):
+    def objects(self) -> list:
         def search(item):
             ret = []
             if not isinstance(item, Environment) and getattr(item, "objects", None):
@@ -264,15 +273,23 @@ class Environment:
         """
         Lists all assets / SerializedFiles within this environment.
         """
-        def gen_all_asset_files(file, ret  = []):
+
+        def gen_all_asset_files(file, ret=[]):
             for f in getattr(file, "files", {}).values():
                 if isinstance(f, SerializedFile):
                     ret.append(f)
                 else:
                     gen_all_asset_files(f, ret)
             return ret
+
         return gen_all_asset_files(self)
 
-    def get(self, key, default=None):
+    def get(self, key: str, default=None):
         return getattr(self, key, default)
+
+    def register_cab(self, name: str, item: object) -> None:
+        self.cabs[name.lower()] = item
+
+    def get_cab(self, name: str) -> object:
+        return self.cabs.get(name.lower(), None)
 

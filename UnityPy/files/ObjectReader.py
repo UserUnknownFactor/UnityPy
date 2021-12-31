@@ -96,7 +96,7 @@ class ObjectReader:
             # so following code appends the missing data back to edited objects
             if self.type != ClassIDType.MonoBehaviour:
                 end_pos = self.byte_start + self.byte_size
-                if self._read_until != end_pos:
+                if self._read_until and self._read_until != end_pos:
                     self.reader.Position = self._read_until
                     data += self.reader.read_bytes(end_pos - self._read_until)
         else:
@@ -200,13 +200,12 @@ class ObjectReader:
 
     def read_typetree(self, nodes: list = None) -> dict:
         self.reset()
-        tree = dict()
+        tree = {}
         if nodes:
             tree = TypeTreeHelper.read_typetree(nodes, self)
-        elif getattr(self.serialized_type, "nodes", None):
-            if self.serialized_type.nodes:
-                tree = TypeTreeHelper.read_typetree(
-                    self.serialized_type.nodes, self)
+        elif self.serialized_type.nodes:
+            tree = TypeTreeHelper.read_typetree(
+                self.serialized_type.nodes, self)
         return tree
 
     def save_typetree(self, tree: dict, nodes: list = None, writer: EndianBinaryWriter = None):

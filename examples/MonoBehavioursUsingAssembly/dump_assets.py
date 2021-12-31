@@ -53,7 +53,12 @@ def export_obj(obj, asset: str, local_path: str) -> list:
     objfmt = str(obj.type)
 
     data = obj.read()
-    name = data.name if (data.name is not None and data.name != '') else "unnamed asset"
+    name = "unnamed asset"
+    try:
+        if (data.name is not None and data.name != ''):
+            name = data.name
+    except:
+        pass
     fname, extension = os.path.splitext(name)
     objname = "%s-%s-%d" % (fname, asset, obj.path_id)
 
@@ -79,6 +84,12 @@ def export_obj(obj, asset: str, local_path: str) -> list:
         fp = f"{make_path(DST, local_path, fname)}.png"
         if not os.path.isfile(fp):
             data.image.save(fp)
+
+    elif objfmt == "PlayerSettings":
+        fp = f"{make_path(DST, local_path, objname)}.dat"
+        if not os.path.isfile(fp):
+            with open(fp, "wb") as f:
+                f.write(obj.get_raw_data())
 
     elif objfmt == "MonoBehaviour":
         is_raw = True

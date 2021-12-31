@@ -14,8 +14,6 @@ So far following obj types can be edited:
   - TextAsset
   - MonoBehaviour
 
-If you need advice or if you want to talk about (game) data-mining,
-feel free to join the [UnityPy Discord](https://discord.gg/C6txv7M).
 
 1. [Installation](#installation)
 2. [Example](#example)
@@ -64,7 +62,7 @@ def unpack_all_assets(source_folder : str, destination_folder : str):
             # iterate over internal objects
             for obj in env.objects:
                 # process specific object types
-                if obj.type in ["Texture2D", "Sprite"]:
+                if obj.type.name in ["Texture2D", "Sprite"]:
                     # parse the object data
                     data = obj.read()
 
@@ -81,7 +79,7 @@ def unpack_all_assets(source_folder : str, destination_folder : str):
 
             # alternative way which keeps the original path
             for path,obj in env.container.items():
-                if obj.type in ["Texture2D", "Sprite"]:
+                if obj.type.name in ["Texture2D", "Sprite"]:
                     data = obj.read()
                     # create dest based on original path
                     dest = os.path.join(destination_folder, *path.split("/"))
@@ -96,8 +94,8 @@ def unpack_all_assets(source_folder : str, destination_folder : str):
 You probably have to read [Important Classes](#important-classes)
 and [Important Object Types](#important-object-types) to understand how it works.
 
-People who have slightly advanced python skills should take a look at [examples/AssetBatchConverter.py](examples/AssetBatchConverter.py) for a more advanced example.
-It can also be used as general template.
+People who have slightly advanced python skills should take a look at [UnityPy/tools/extractor.py](UnityPy/tools/extractor.py) for a more advanced example.
+It can also be used as general template or simply as importable tool.
 
 
 ## Important Classes
@@ -171,7 +169,7 @@ __Export__
 ```python
 from PIL import Image
 for obj in env.objects:
-    if obj.type == "Texture2D":
+    if obj.type.name == "Texture2D":
         # export texture
         data = image.read()
         data.image.save(path)
@@ -195,7 +193,7 @@ Unlike most other extractors (including AssetStudio) UnityPy merges those two im
 __Export__
 ```python
 for obj in env.objects:
-    if obj.type == "Sprite":
+    if obj.type.name == "Sprite":
         data = image.read()
         data.image.save(path)
 ```
@@ -213,7 +211,7 @@ Some games save binary data as TextFile, so it's usually better to use ``.script
 __Export__
 ```python
 for obj in env.objects:
-    if obj.type == "TextAsset":
+    if obj.type.name == "TextAsset":
         # export asset
         data = image.read()
         with open(path, "wb") as f:
@@ -241,7 +239,7 @@ __Export__
 import json
 
 for obj in env.objects:
-    if obj.type == "MonoBehaviour":
+    if obj.type.name == "MonoBehaviour":
         # export
         if obj.serialized_type.nodes:
             # save decoded data
@@ -296,7 +294,7 @@ with open(f"{mesh.name}.obj", "wt", newline = "") as f:
 ### [Font](UnityPy/classes/Font.py)
 
 ```python
-if obj.type == "Font":
+if obj.type.name == "Font":
     font : Font = obj.read()
     if font.m_FontData:
         extension = ".ttf"

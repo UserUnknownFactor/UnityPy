@@ -74,3 +74,4 @@ def search_resource_file(path, name):
     #print("real file", path, name)
     files = glob.glob(os.path.join(path, "**", name), recursive=True)
     return files[0] if len(files) else ""
+

@@ -6,6 +6,7 @@ from ..files import ObjectReader
 import types
 from ..exceptions import TypeTreeError as TypeTreeError
 
+
 class Object(object):
     type_tree: dict
 
@@ -46,12 +47,11 @@ class Object(object):
         return self.reader.dump_typetree_structure()
 
     def read_typetree(self, nodes: list = None) -> dict:
-        tree = dict()
         try:
             tree = self.reader.read_typetree(nodes)
         except TypeTreeError as e:
-            print("Failed to read TypeTree:\n", e.message)
-            return dict()
+            print("Failed to read TypeTree:\n", e)
+            return {}
         self.type_tree = NodeHelper(tree, self.assets_file)
         return tree
 
@@ -63,17 +63,15 @@ class Object(object):
             if isinstance(value, list):
                 return [class_to_dict(val) for val in value]
             elif isinstance(value, dict):
-                return {
-                    key: class_to_dict(val)
-                    for key, val in value.items()
-                }
+                return {key: class_to_dict(val) for key, val in value.items()}
             elif hasattr(value, "__dict__"):
                 if isinstance(value, PPtr):
                     return {"m_PathID": value.path_id, "m_FileID": value.file_id}
                 return {
                     key: class_to_dict(val)
                     for key, val in value.__dict__.items()
-                    if not isinstance(value, (types.FunctionType, types.MethodType)) and not key in ["type_tree", "assets_file"]
+                    if not isinstance(value, (types.FunctionType, types.MethodType))
+                    and not key in ["type_tree", "assets_file"]
                 }
             else:
                 return value
@@ -99,7 +97,8 @@ class Object(object):
             self.save_typetree()
         else:
             raise NotImplementedError(
-                "There is no save function for this obj.type nor has it any typetree nodes that could be used.")
+                "There is no save function for this obj.type nor has it any typetree nodes that could be used."
+            )
 
     def _save(self, writer):
         # the reader is actually an ObjectReader,
@@ -116,7 +115,8 @@ class Object(object):
             self.reader.Position = old_pos
             if name == "type_tree":
                 return self.type_tree
-
+        elif name == "read":
+            return lambda : self
         return getattr(self.type_tree, name)
 
     def get(self, key, default=None):
@@ -178,4 +178,3 @@ class NodeHelper:
 
     def __repr__(self):
         return "<NodeHelper - %s>" % self.__dict__.__repr__()
-
