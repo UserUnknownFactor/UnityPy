@@ -82,11 +82,11 @@ class EndianBinaryWriter:
         self.write(pack(self.endian + "?", value))
 
     def write_string_to_null(self, value: str):
-        self.write(value.encode("utf8", "surrogateescape"))
+        self.write(value.encode("utf-8", "surrogatepass"))
         self.write(b"\0")
 
     def write_aligned_string(self, value: str):
-        bstring = value.encode("utf8", "surrogateescape")
+        bstring = value.encode("utf-8", "surrogatepass")
         self.write_int(len(bstring))
         self.write(bstring)
         self.align_stream(4)
