@@ -6,6 +6,7 @@ from ..enums import FileType, ClassIDType
 import os
 from .. import environment
 
+
 def save_ptr(obj, writer: EndianBinaryWriter):
     if isinstance(obj, PPtr):
         writer.write_int(obj.file_id)

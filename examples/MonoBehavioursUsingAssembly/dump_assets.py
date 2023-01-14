@@ -91,6 +91,16 @@ def export_obj(obj, asset: str, local_path: str) -> list:
             with open(fp, "wb") as f:
                 f.write(obj.get_raw_data())
 
+    elif objfmt == "Shader":
+        extension = "txt"
+        fp = f"{make_path(DST, local_path, objname)}"
+        if not os.path.isfile(fp):
+            with open(f"{fp}.txt", "w", encoding="utf-8") as f:
+                f.write(data.export())
+        if not os.path.isfile(fp):
+            with open(f"{fp}.dat", "wb") as f:
+                f.write(data.get_raw_data())
+
     elif objfmt == "MonoBehaviour":
         is_raw = True
         script = None
@@ -106,15 +116,16 @@ def export_obj(obj, asset: str, local_path: str) -> list:
             pass
         else:
             script = data.m_Script.read()
+            cname = script.m_ClassName
             if not is_raw or not script or (
-                ASSEMBLY_TREES and script.m_ClassName not in ASSEMBLY_TREES):
+                ASSEMBLY_TREES and cname not in ASSEMBLY_TREES):
                 # TypeTree already found
                 # or
                 # class not found in known ASSEMBLY_TREES,
                 # so we have to add the classes from some other dlls
                 pass
             elif ASSEMBLY_TREES:
-                nodes = ASSEMBLY_TREES[script.m_ClassName]
+                nodes = ASSEMBLY_TREES[cname]
                 try:
                     tree = obj.read_typetree(nodes)
                     is_raw = False

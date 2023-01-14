@@ -2,7 +2,7 @@ from .Texture import Texture
 from ..enums import TextureFormat
 from ..export import Texture2DConverter
 from ..helpers.ResourceReader import get_resource_data
-from ..streams import EndianBinaryWriter
+from ..streams import EndianBinaryReader, EndianBinaryWriter
 from PIL import Image
 from io import BufferedIOBase, RawIOBase, IOBase
 
@@ -30,11 +30,10 @@ class Texture2D(Texture):
         img_data, tex_format = Texture2DConverter.image_to_texture2d(
             img, self.m_TextureFormat
         )
-        self.image_data = img_data
-        # width * height * channel count
-        self.m_CompleteImageSize = len(
-            self._image_data
-        )  # img.width * img.height * len(img.getbands())
+
+        self.reset_streamdata()
+        self._image_data = img_data # width * height * channel count
+        self.m_CompleteImageSize = len(self._image_data)  # img.width * img.height * len(img.getbands())
         self.m_TextureFormat = tex_format
 
     @property
@@ -65,9 +64,20 @@ class Texture2D(Texture):
     def set_image(self, img, target_format: TextureFormat = None, in_cab: bool = False):
         if img is None:
             raise Exception("No image provided")
+
+        if (
+            isinstance(img, str)
+            or isinstance(img, BufferedIOBase)
+            or isinstance(img, RawIOBase)
+            or isinstance(img, IOBase)
+        ):
+            img = Image.open(img)
+
         if not target_format:
             target_format = self.m_TextureFormat
+
         img_data, tex_format = Texture2DConverter.image_to_texture2d(img, target_format)
+        self.m_TextureFormat = tex_format
 
         if in_cab:
             self.image_data = img_data
@@ -78,7 +88,6 @@ class Texture2D(Texture):
         self.m_CompleteImageSize = len(
             self._image_data
         )  # img.width * img.height * len(img.getbands())
-        self.m_TextureFormat = tex_format
 
     def __init__(self, reader):
         super().__init__(reader=reader)

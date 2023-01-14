@@ -20,9 +20,21 @@ class Shader(NamedObject):
             ]
 
             if version >= (2019, 3):  # 2019.3 and up
-                self.offsets = reader.read_u_int_array_array()[0]
-                self.compressedLengths = reader.read_u_int_array_array()[0]
-                self.decompressedLengths = reader.read_u_int_array_array()[0]
+                _tmp = reader.read_u_int_array_array()
+                if len(_tmp):
+                    self.offsets = _tmp[0]
+                else:
+                    self.offsets = []
+                _tmp = reader.read_u_int_array_array()
+                if len(_tmp):
+                    self.compressedLengths = _tmp[0]
+                else:
+                    self.compressedLengths = []
+                _tmp = reader.read_u_int_array_array()
+                if len(_tmp):
+                    self.decompressedLengths = _tmp[0]
+                else:
+                    self.decompressedLengths = []
             else:
                 self.offsets = reader.read_u_int_array()
                 self.compressedLengths = reader.read_u_int_array()
@@ -282,7 +294,7 @@ class SerializedSubProgram:
         self.m_BlobIndex = reader.read_u_int()
         self.m_Channels = ParserBindChannels(reader)
 
-        if (2019,) <= version < (2021, 2):  # 2019 ~2021.1
+        if (2019,0) <= version[:2] < (2021, 2):  # 2019 ~2021.1
             self.m_GlobalKeywordIndices = reader.read_u_short_array()
             reader.align_stream()
             self.m_LocalKeywordIndices = reader.read_u_short_array()
@@ -369,7 +381,7 @@ class SerializedPass:
             reader.align_stream()
             m_Platforms = reader.read_byte_array()
             reader.align_stream()
-            if version < (2021, 2):
+            if version[:2] < (2021, 2):
                 m_LocalKeywordMask = reader.read_u_short_array()
                 reader.align_stream()
                 m_GlobalKeywordMask = reader.read_u_short_array()
@@ -398,7 +410,7 @@ class SerializedPass:
         self.m_Name = reader.read_aligned_string()
         self.m_TextureName = reader.read_aligned_string()
         self.m_Tags = SerializedTagMap(reader)
-        if version >= (2021, 2):
+        if version[:2] >= (2021, 2):
             m_SerializedKeywordStateMask = reader.read_u_short_array()
             reader.align_stream()
 
@@ -440,7 +452,7 @@ class SerializedShader:
         numSubShaders = reader.read_int()
         self.m_SubShaders = [SerializedSubShader(reader) for _ in range(numSubShaders)]
 
-        if version >= (2021, 2):
+        if version[:2] >= (2021, 2):
             self.m_KeywordNames = reader.read_string_array()
             self.m_KeywordFlags = reader.read_bytes(reader.read_int())
             reader.align_stream()
@@ -453,7 +465,7 @@ class SerializedShader:
             SerializedShaderDependency(reader) for _ in range(numDependencies)
         ]
 
-        if version >= (2021,):
+        if version[0] >= 2021:
             m_CustomEditorForRenderPipelinesSize = reader.read_int()
             self.m_CustomEditorForRenderPipelines = [
                 SerializedCustomEditorForRenderPipeline(reader)
