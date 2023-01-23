@@ -9,7 +9,13 @@ TYPES = ['TextAsset', 'MonoBehaviour', 'Texture2D', 'Shader']
 
 ROOT = os.path.abspath(os.getcwd()) # base directory
 DST = os.path.join(ROOT, "output") # destination folder
-ASSETS = glob(os.path.join(ROOT,"*.assets")) + glob(os.path.join(ROOT,"data.unity3d")) # sources
+
+ASSETS = glob(
+    os.path.join(ROOT,"globalmanagers")) + glob(
+    os.path.join(ROOT,"*.assets")) + glob(
+    os.path.join(ROOT,"level*")) + glob(
+    os.path.join(ROOT,"data.unity3d")) # sources
+
 ASSEMBLY_TREES = dict()
 if os.path.isfile("assembly_typetrees.json"):
     with open("assembly_typetrees.json", "r", encoding="utf-8-sig") as f:
@@ -70,7 +76,7 @@ def export_obj(obj, asset: str, local_path: str) -> list:
                     f.write(data.script)
 
     elif objfmt == "Texture2D":
-        fp = f"{make_path(DST, local_path, fname)}.png"
+        fp = f"{make_path(DST, local_path, asset + '-' + fname)}.png"
         if not os.path.isfile(fp):
             try:
                 data.image.save(fp)

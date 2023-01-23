@@ -62,11 +62,16 @@ def pythonnet_init():
     """Correctly sets-up pythonnet for the typetree generator"""
 
     # Prepare correct runtime
-    from clr_loader import get_coreclr
-    from pythonnet import set_runtime
+    #from clr_loader import get_coreclr
+    #from pythonnet import set_runtime
 
-    rt = get_coreclr(CLR_CONFIG)
-    set_runtime(rt)
+    #rt = get_coreclr(CLR_CONFIG)
+	#set_runtime(rt)
+
+    from pythonnet import load
+
+    load("coreclr")
+    import clr
 
 
 def create_generator(dll_folder: str):
