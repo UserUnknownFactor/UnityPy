@@ -294,7 +294,7 @@ class SerializedSubProgram:
         self.m_BlobIndex = reader.read_u_int()
         self.m_Channels = ParserBindChannels(reader)
 
-        if (2019,0) <= version[:2] < (2021, 2):  # 2019 ~2021.1
+        if (2019, 0) <= version[:2] < (2021, 2):  # 2019 ~2021.1
             self.m_GlobalKeywordIndices = reader.read_u_short_array()
             reader.align_stream()
             self.m_LocalKeywordIndices = reader.read_u_short_array()

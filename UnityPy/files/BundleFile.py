@@ -1,4 +1,4 @@
-# TODO: implement encryption for saving files
+﻿# TODO: implement encryption for saving files
 from collections import namedtuple
 import re
 from typing import Tuple, Union
@@ -25,10 +25,8 @@ class BundleFile(File.File):
     decryptor: ArchiveStorageManager.ArchiveStorageDecryptor = None
     _uses_block_alignment: bool = False
 
-    def __init__(
-        self, reader: EndianBinaryReader, parent: File, name: str = None, **kwargs
-    ):
-        super().__init__(parent=parent, name=name, **kwargs)
+    def __init__(self, reader: EndianBinaryReader, parent: File, name: str = None):
+        super().__init__(parent=parent, name=name)
         signature = self.signature = reader.read_string_to_null()
         self.version = reader.read_u_int()
         self.version_player = reader.read_string_to_null()

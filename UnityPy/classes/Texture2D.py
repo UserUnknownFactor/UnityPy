@@ -30,11 +30,15 @@ class Texture2D(Texture):
         img_data, tex_format = Texture2DConverter.image_to_texture2d(
             img, self.m_TextureFormat
         )
-
-        self.reset_streamdata()
-        self._image_data = img_data # width * height * channel count
-        self.m_CompleteImageSize = len(self._image_data)  # img.width * img.height * len(img.getbands())
+		
+        self.image_data = img_data
         self.m_TextureFormat = tex_format
+
+        # disable mipmaps as we don't store them ourselves by default
+        if self.version[:2] < (5, 2):  # 5.2 down
+            self.m_MipMap = False
+        else:
+            self.m_MipCount = 1
 
     @property
     def image_data(self):
@@ -50,18 +54,19 @@ class Texture2D(Texture):
     @image_data.setter
     def image_data(self, data: bytes):
         self._image_data = data
-        # prefer writing to cab if possible
-        if self.version >= (5, 3) and self.m_StreamData.path:
-            cab = self.assets_file.get_writeable_cab()
-            if cab:
-                self.m_StreamData.offset = cab.Position
-                cab.write(data)
-                self.m_StreamData.size = len(data)
-                self.m_StreamData.path = cab.path
-            else:
-                self.reset_streamdata()
+		 # img.width * img.height * len(img.getbands())
+        self.m_CompleteImageSize = len(data)
 
-    def set_image(self, img, target_format: TextureFormat = None, in_cab: bool = False):
+        # prefer writing to cab if possible, but...
+        self.reset_streamdata()
+
+    def set_image(
+        self,
+        img,
+        target_format: TextureFormat = None,
+        in_cab: bool = False,
+        mipmap_count: int = 1,
+    ):
         if img is None:
             raise Exception("No image provided")
 
@@ -77,17 +82,31 @@ class Texture2D(Texture):
             target_format = self.m_TextureFormat
 
         img_data, tex_format = Texture2DConverter.image_to_texture2d(img, target_format)
-        self.m_TextureFormat = tex_format
+        if mipmap_count > 1:
+            width = self.m_Width
+            height = self.m_Height
+            re_img = img
+            for i in range(mipmap_count - 1):
+                width //= 2
+                height //= 2
+                if width < 4 or height < 4:
+                    mipmap_count = i + 1
+                    break
+                re_img = re_img.resize((width, height), Image.BICUBIC)
+                img_data += Texture2DConverter.image_to_texture2d(
+                    re_img, target_format
+                )[0]
 
         if in_cab:
-            self.image_data = img_data
-        else:
             self._image_data = img_data
-            self.reset_streamdata()
-        # width * height * channel count
-        self.m_CompleteImageSize = len(
-            self._image_data
-        )  # img.width * img.height * len(img.getbands())
+        else:
+            self.image_data = img_data
+        self.m_TextureFormat = tex_format
+		
+        if self.version[:2] < (5, 2):  # 5.2 down
+            self.m_MipMap = mipmap_count > 1
+        else:
+            self.m_MipCount = mipmap_count
 
     def __init__(self, reader):
         super().__init__(reader=reader)

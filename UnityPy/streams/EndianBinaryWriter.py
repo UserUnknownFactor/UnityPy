@@ -81,15 +81,17 @@ class EndianBinaryWriter:
     def write_boolean(self, value: bool):
         self.write(pack(self.endian + "?", value))
 
-    def write_string_to_null(self, value: str):
-        self.write(value.encode("utf-8", "surrogatepass"))
+    def write_string_to_null(self, value: [str, bytes]):
+        if not isinstance(value, (bytes, bytearray)):
+            self.write(value.encode("utf-8", "surrogatepass"))
         self.write(b"\0")
 
-    def write_aligned_string(self, value: str):
-        bstring = value.encode("utf-8", "surrogatepass")
-        self.write_int(len(bstring))
-        self.write(bstring)
-        self.align_stream(4)
+    def write_aligned_string(self, value: [str, bytes]):
+        if not isinstance(value, (bytes, bytearray)):
+            value = value.encode("utf-8", "surrogatepass")
+        self.write_int(len(value))
+        self.write(value)
+        self.align_stream()
 
     def align_stream(self, alignment=4):
         pos = self.stream.tell()

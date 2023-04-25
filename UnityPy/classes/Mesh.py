@@ -1,4 +1,5 @@
 import math
+from typing import List
 
 from .AnimationClip import AABB, PackedFloatVector, PackedIntVector
 from .NamedObject import NamedObject
@@ -9,7 +10,12 @@ from ..streams import EndianBinaryWriter
 from ..enums import GfxPrimitiveType
 import struct
 from enum import IntEnum
-from ..export.MeshExporter import export_mesh
+from ..export import MeshExporter
+
+try:
+    from UnityPy import UnityPyBoost
+except:
+    UnityPyBoost = None
 
 
 class MinMaxAABB:
@@ -101,7 +107,7 @@ class ChannelInfo:
         self.stream = reader.read_byte()
         self.offset = reader.read_byte()
         self.format = reader.read_byte()
-        self.dimension = reader.read_byte()
+        self.dimension = reader.read_byte() & 0xF
 
     def save(self, writer):
         writer.write_byte(self.stream)
@@ -183,7 +189,9 @@ class VertexData:
                     if m_Channel.dimension > 0:
                         chnMask |= 1 << chn  # Shift 1UInt << chn
                         stride += m_Channel.dimension * MeshHelper.GetFormatSize(
-                            self.reader.version, m_Channel.format
+                            MeshHelper.ToVertexFormat(
+                                m_Channel.format, self.reader.version
+                            )
                         )
             self.m_Streams[s] = StreamInfo(
                 channelMask=chnMask,
@@ -227,7 +235,7 @@ class VertexData:
                         m_Channel.format = 0  # kChannelFormatFloat
                         m_Channel.dimension = 4
                     offset += m_Channel.dimension * MeshHelper.GetFormatSize(
-                        self.reader.version, m_Channel.format
+                        MeshHelper.ToVertexFormat(m_Channel.format, self.reader.version)
                     )
 
 
@@ -339,7 +347,7 @@ class SubMesh:
 
 class Mesh(NamedObject):
     def export(self):
-        return export_mesh(self)
+        return MeshExporter.export_mesh(self)
 
     def __init__(self, reader):
         super().__init__(reader=reader)
@@ -531,41 +539,44 @@ class Mesh(NamedObject):
                         m_Channel.dimension = 4
 
                     componentByteSize = MeshHelper.GetFormatSize(
-                        version, m_Channel.format
+                        MeshHelper.ToVertexFormat(m_Channel.format, self.reader.version)
                     )
-                    componentBytes = bytearray(
-                        m_VertexCount * m_Channel.dimension * componentByteSize
-                    )
-                    for v in range(m_VertexCount):
-                        vertexOffset = (
-                            int(m_Stream.offset)
-                            + m_Channel.offset
-                            + int(m_Stream.stride) * v
+                    swap = self.reader.endian == "<" and componentByteSize > 1
+
+                    if UnityPyBoost:
+                        componentBytes = UnityPyBoost.unpack_vertexdata(
+                            bytes(m_VertexData.m_DataSize),
+                            componentByteSize,
+                            m_VertexCount,
+                            m_Stream.offset,
+                            m_Stream.stride,
+                            m_Channel.offset,
+                            m_Channel.dimension,
+                            swap,
                         )
-                        for d in range(m_Channel.dimension):
-                            componentOffsetSrc = (
-                                vertexOffset + componentByteSize * d
-                            )  # src offset
-                            componentOffsetDst = componentByteSize * (
-                                v * m_Channel.dimension + d
-                            )  # dst offst
+                    else:
+                        componentBytes = bytearray(
+                            m_VertexCount * m_Channel.dimension * componentByteSize
+                        )
 
-                            buff = m_VertexData.m_DataSize[
-                                componentOffsetSrc : componentOffsetSrc
-                                + componentByteSize
-                            ]
-
-                            if (
-                                self.reader.endian == "<" and componentByteSize > 1
-                            ):  # swap bytes
-                                buff = buff[::-1]
-
-                            componentBytes[
-                                componentOffsetDst : componentOffsetDst
-                                + componentByteSize
-                            ] = buff
-                            # Buffer.BlockCopy(m_VertexData.m_DataSize, componentOffset, componentBytes, componentByteSize * (v * m_Channel.dimension + d), componentByteSize);
-                            # (Array src, int srcOffset, Array dst, int dstOffset, int count);
+                        vertexBaseOffset = m_Stream.offset + m_Channel.offset
+                        for v in range(m_VertexCount):
+                            vertexOffset = vertexBaseOffset + m_Stream.stride * v
+                            for d in range(m_Channel.dimension):
+                                componentOffset = vertexOffset + componentByteSize * d
+                                vertexDataSrc = componentOffset
+                                componentDataSrc = componentByteSize * (
+                                    v * m_Channel.dimension + d
+                                )
+                                buff = m_VertexData.m_DataSize[
+                                    vertexDataSrc : vertexDataSrc + componentByteSize
+                                ]
+                                if swap:  # swap bytes
+                                    buff = buff[::-1]
+                                componentBytes[
+                                    componentDataSrc : componentDataSrc
+                                    + componentByteSize
+                                ] = buff
 
                     if MeshHelper.IsIntFormat(version, m_Channel.format):
                         componentsIntArray = MeshHelper.BytesToIntArray(
@@ -573,7 +584,9 @@ class Mesh(NamedObject):
                         )
                     else:
                         componentsFloatArray = MeshHelper.BytesToFloatArray(
-                            componentBytes, componentByteSize
+                            componentBytes,
+                            componentByteSize,
+                            MeshHelper.ToVertexFormat(m_Channel.format, version),
                         )
 
                     if version[0] >= 2018:
@@ -801,7 +814,7 @@ class Mesh(NamedObject):
             topology = m_SubMesh.topology
             if topology == GfxPrimitiveType.kPrimitiveTriangles:
                 m_Indices.extend(
-                    m_IndexBuffer[firstIndex : firstIndex + indexCount * 3]
+                    m_IndexBuffer[firstIndex : firstIndex + indexCount - indexCount % 3]
                 )
 
             elif (
@@ -889,70 +902,28 @@ class Mesh(NamedObject):
 
 class MeshHelper:
     @staticmethod
-    def GetFormatSize(version, format: int) -> int:
-        if version[0] < 2017:
-            if format == VertexChannelFormat.kChannelFormatFloat:
-                return 4
-            elif format == VertexChannelFormat.kChannelFormatFloat16:
-                return 2
-            elif format == VertexChannelFormat.kChannelFormatColor:  # in 4.x is size 4
-                return 1
-            elif format == VertexChannelFormat.kChannelFormatByte:
-                return 1
-            elif format == VertexChannelFormat.kChannelFormatUInt32:  # in 5.x
-                return 4
-        elif version[0] < 2019:
-            if format == VertexFormat.kVertexFormatFloat:
-                return 4
-            elif format == VertexFormat.kVertexFormatFloat16:
-                return 2
-            elif format == VertexFormat.kVertexFormatColor:
-                return 1
-            elif format == VertexFormat.kVertexFormatUNorm8:
-                return 1
-            elif format == VertexFormat.kVertexFormatSNorm8:
-                return 1
-            elif format == VertexFormat.kVertexFormatUNorm16:
-                return 2
-            elif format == VertexFormat.kVertexFormatSNorm16:
-                return 2
-            elif format == VertexFormat.kVertexFormatUInt8:
-                return 1
-            elif format == VertexFormat.kVertexFormatSInt8:
-                return 1
-            elif format == VertexFormat.kVertexFormatUInt16:
-                return 2
-            elif format == VertexFormat.kVertexFormatSInt16:
-                return 2
-            elif format == VertexFormat.kVertexFormatUInt32:
-                return 4
-            elif format == VertexFormat.kVertexFormatSInt32:
-                return 4
-        else:
-            if format == VertexFormatV2019.kVertexFormatFloat:
-                return 4
-            elif format == VertexFormatV2019.kVertexFormatFloat16:
-                return 2
-            elif format == VertexFormatV2019.kVertexFormatUNorm8:
-                return 1
-            elif format == VertexFormatV2019.kVertexFormatSNorm8:
-                return 1
-            elif format == VertexFormatV2019.kVertexFormatUNorm16:
-                return 2
-            elif format == VertexFormatV2019.kVertexFormatSNorm16:
-                return 2
-            elif format == VertexFormatV2019.kVertexFormatUInt8:
-                return 1
-            elif format == VertexFormatV2019.kVertexFormatSInt8:
-                return 1
-            elif format == VertexFormatV2019.kVertexFormatUInt16:
-                return 2
-            elif format == VertexFormatV2019.kVertexFormatSInt16:
-                return 2
-            elif format == VertexFormatV2019.kVertexFormatUInt32:
-                return 4
-            elif format == VertexFormatV2019.kVertexFormatSInt32:
-                return 4
+    def GetFormatSize(format: int) -> int:
+        if format in [
+            VertexFormat.kVertexFormatFloat,
+            VertexFormat.kVertexFormatUInt32,
+            VertexFormat.kVertexFormatSInt32,
+        ]:
+            return 4
+        elif format in [
+            VertexFormat.kVertexFormatFloat16,
+            VertexFormat.kVertexFormatUNorm16,
+            VertexFormat.kVertexFormatSNorm16,
+            VertexFormat.kVertexFormatUInt16,
+            VertexFormat.kVertexFormatSInt16,
+        ]:
+            return 2
+        elif format in [
+            VertexFormat.kVertexFormatUNorm8,
+            VertexFormat.kVertexFormatSNorm8,
+            VertexFormat.kVertexFormatUInt8,
+            VertexFormat.kVertexFormatSInt8,
+        ]:
+            return 1
         raise ValueError(format)
 
     @staticmethod
@@ -965,24 +936,86 @@ class MeshHelper:
             return format >= 6
 
     @staticmethod
-    def BytesToFloatArray(inputBytes, size):
-        return [
-            inputBytes[i] / 255.0
-            if size == 1
-            else struct.unpack(">e", inputBytes[i * 2 : i * 2 + 2])[0]
-            if size == 2
-            else struct.unpack(">f", inputBytes[i * 4 : i * 4 + 4])[0]
-            if size == 4
-            else 0
-            for i in range(len(inputBytes) // size)
-        ]
+    def BytesToFloatArray(inputBytes, size, vformat: "VertexFormat") -> List[float]:
+        if vformat == VertexFormat.kVertexFormatFloat:
+            return struct.unpack(f">{'f'*(len(inputBytes)//4)}", inputBytes)
+        elif vformat == VertexFormat.kVertexFormatFloat16:
+            return struct.unpack(f">{'e'*(len(inputBytes)//2)}", inputBytes)
+        elif vformat == VertexFormat.kVertexFormatUNorm8:
+            return [byte / 255.0 for byte in inputBytes]
+        elif vformat == VertexFormat.kVertexFormatSNorm8:
+            return [max(((byte - 128) / 127.0), -1.0) for byte in inputBytes]
+        elif vformat == VertexFormat.kVertexFormatUNorm16:
+            return [
+                x / 65535.0
+                for x in struct.unpack(f">{'H'*(len(inputBytes)//2)}", inputBytes)
+            ]
+        elif vformat == VertexFormat.kVertexFormatSNorm16:
+            return [
+                max(((x - 32768) / 32767.0), -1.0)
+                for x in struct.unpack(f">{'h'*(len(inputBytes)//2)}", inputBytes)
+            ]
 
     @staticmethod
     def BytesToIntArray(inputBytes, size):
-        return [
-            int.from_bytes(inputBytes[i : i + size], byteorder="big", signed=True)
-            for i in range(0, len(inputBytes), size)
-        ]
+        if size == 1:
+            return [x for x in inputBytes]
+        elif size == 2:
+            return [
+                x for x in struct.unpack(f">{'h'*(len(inputBytes)//2)}", inputBytes)
+            ]
+        elif size == 4:
+            return [
+                x for x in struct.unpack(f">{'i'*(len(inputBytes)//4)}", inputBytes)
+            ]
+
+    @staticmethod
+    def ToVertexFormat(format: int, version: List[int]) -> "VertexFormat":
+        if version[0] < 2017:
+            if format == VertexChannelFormat.kChannelFormatFloat:
+                return VertexFormat.kVertexFormatFloat
+            elif format == VertexChannelFormat.kChannelFormatFloat16:
+                return VertexFormat.kVertexFormatFloat16
+            elif format == VertexChannelFormat.kChannelFormatColor:  # in 4.x is size 4
+                return VertexFormat.kVertexFormatUNorm8
+            elif format == VertexChannelFormat.kChannelFormatByte:
+                return VertexFormat.kVertexFormatUInt8
+            elif format == VertexChannelFormat.kChannelFormatUInt32:  # in 5.x
+                return VertexFormat.kVertexFormatUInt32
+            else:
+                raise ValueError(f"Failed to convert {format.name} to VertexFormat")
+        elif version[0] < 2019:
+            if format == VertexFormat2017.kVertexFormatFloat:
+                return VertexFormat.kVertexFormatFloat
+            elif format == VertexFormat2017.kVertexFormatFloat16:
+                return VertexFormat.kVertexFormatFloat16
+            elif (
+                format == VertexFormat2017.kVertexFormatColor
+                or format == VertexFormat2017.kVertexFormatUNorm8
+            ):
+                return VertexFormat.kVertexFormatUNorm8
+            elif format == VertexFormat2017.kVertexFormatSNorm8:
+                return VertexFormat.kVertexFormatSNorm8
+            elif format == VertexFormat2017.kVertexFormatUNorm16:
+                return VertexFormat.kVertexFormatUNorm16
+            elif format == VertexFormat2017.kVertexFormatSNorm16:
+                return VertexFormat.kVertexFormatSNorm16
+            elif format == VertexFormat2017.kVertexFormatUInt8:
+                return VertexFormat.kVertexFormatUInt8
+            elif format == VertexFormat2017.kVertexFormatSInt8:
+                return VertexFormat.kVertexFormatSInt8
+            elif format == VertexFormat2017.kVertexFormatUInt16:
+                return VertexFormat.kVertexFormatUInt16
+            elif format == VertexFormat2017.kVertexFormatSInt16:
+                return VertexFormat.kVertexFormatSInt16
+            elif format == VertexFormat2017.kVertexFormatUInt32:
+                return VertexFormat.kVertexFormatUInt32
+            elif format == VertexFormat2017.kVertexFormatSInt32:
+                return VertexFormat.kVertexFormatSInt32
+            else:
+                raise ValueError(f"Failed to convert {format.name} to VertexFormat")
+        else:
+            return VertexFormat(format)
 
 
 class VertexChannelFormat(IntEnum):
@@ -993,7 +1026,7 @@ class VertexChannelFormat(IntEnum):
     kChannelFormatUInt32 = 4
 
 
-class VertexFormat(IntEnum):
+class VertexFormat2017(IntEnum):
     kVertexFormatFloat = 0
     kVertexFormatFloat16 = 1
     kVertexFormatColor = 2
@@ -1009,7 +1042,7 @@ class VertexFormat(IntEnum):
     kVertexFormatSInt32 = 12
 
 
-class VertexFormatV2019(IntEnum):
+class VertexFormat(IntEnum):
     kVertexFormatFloat = 0
     kVertexFormatFloat16 = 1
     kVertexFormatUNorm8 = 2

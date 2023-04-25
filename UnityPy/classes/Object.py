@@ -5,6 +5,7 @@ from ..streams import EndianBinaryWriter
 from ..files import ObjectReader
 import types
 from ..exceptions import TypeTreeError as TypeTreeError
+from .. import classes
 
 
 class Object(object):
@@ -36,9 +37,8 @@ class Object(object):
             self.read_typetree()
 
     def has_struct_member(self, name: str) -> bool:
-        return self.serialized_type.m_Nodes and any(
-            [x.name == name for x in self.serialized_type.m_Nodes]
-        )
+        nodes = self.reader.get_typetree_nodes()
+        return any(node.m_Name == name for node in nodes)
 
     def dump_typetree(self, nodes: list = None) -> str:
         return self.reader.dump_typetree(nodes=nodes)
@@ -56,9 +56,6 @@ class Object(object):
         return tree
 
     def save_typetree(self, nodes: list = None, writer: EndianBinaryWriter = None):
-        if not writer:
-            writer = EndianBinaryWriter(endian=self.reader.endian)
-
         def class_to_dict(value):
             if isinstance(value, list):
                 return [class_to_dict(val) for val in value]
@@ -116,14 +113,24 @@ class Object(object):
             if name == "type_tree":
                 return self.type_tree
         elif name == "read":
-            return lambda : self
+            return lambda: self
         return getattr(self.type_tree, name)
 
     def get(self, key, default=None):
         return getattr(self, key, default)
 
     def __repr__(self):
-        return "<%s %s>" % (self.__class__.__name__, self.name)
+        return f"<{self.__class__.__name__} path_id={self.path_id}>"
+
+    def __hash__(self):
+        return hash(self.path_id)
+
+    def __eq__(self, other):
+        if isinstance(other, Object):
+            return self.path_id == other.path_id
+        elif isinstance(other, int):
+            return self.path_id == other
+        return False
 
 
 class NodeHelper:
@@ -177,4 +184,8 @@ class NodeHelper:
         return self.__dict__.keys()
 
     def __repr__(self):
-        return "<NodeHelper - %s>" % self.__dict__.__repr__()
+        name = getattr(self, "m_Name", None)
+        if name:
+            return f"<NodeHelper name={name}>"
+        else:
+            return "<NodeHelper>"

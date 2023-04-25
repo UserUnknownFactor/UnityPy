@@ -1,4 +1,4 @@
-import os, sys, json
+import os, sys, json, re
 from glob import glob
 import UnityPy
 from collections import Counter
@@ -44,19 +44,13 @@ def main():
         am.process(export_obj, TYPES)
         #am.save()
 
-class FakeNode:
-    """A fake/minimal Node class for use in UnityPy."""
-
-    def __init__(self, **kwargs):
-        self.__dict__.update(**kwargs)
-
 def make_path(*args):
     fp = os.path.join(*args)
     os.makedirs(os.path.dirname(fp), exist_ok=True)
     return fp
 
 def export_obj(obj, asset: str, local_path: str) -> list:
-    objfmt = str(obj.type)
+    objfmt = obj.type.name
 
     data = obj.read()
     name = "unnamed asset"
@@ -66,6 +60,7 @@ def export_obj(obj, asset: str, local_path: str) -> list:
     except:
         pass
     fname, extension = os.path.splitext(name)
+    fname = re.sub(r'[^\w_. -]', '-', fname)
     objname = "%s-%s-%d" % (fname, asset, obj.path_id)
 
     if objfmt == "TextAsset":
@@ -76,7 +71,7 @@ def export_obj(obj, asset: str, local_path: str) -> list:
                     f.write(data.script)
 
     elif objfmt == "Texture2D":
-        fp = f"{make_path(DST, local_path, asset + '-' + fname)}.png"
+        fp = f"{make_path(DST, local_path, objname)}.png"
         if not os.path.isfile(fp):
             try:
                 data.image.save(fp)
@@ -115,7 +110,7 @@ def export_obj(obj, asset: str, local_path: str) -> list:
                 tree = obj.read_typetree()
                 is_raw = False
             except Exception as e:
-                #print("Error", str(e), "in", objname)
+                print("Error", str(e), "in", objname)
                 pass
         if not data.m_Script:
             # RIP, no referenced script, can only dump raw
@@ -136,7 +131,7 @@ def export_obj(obj, asset: str, local_path: str) -> list:
                     tree = obj.read_typetree(nodes)
                     is_raw = False
                 except Exception as e:
-                    #print("Error", str(e), "in", objname)
+                    print("Error", str(e), "in", objname)
                     pass
 
         if is_raw:

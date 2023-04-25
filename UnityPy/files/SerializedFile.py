@@ -1,14 +1,14 @@
 ﻿import os
 import re
-import sys
-from struct import Struct
 
 from . import File, ObjectReader
 from ..enums import BuildTarget, ClassIDType, CommonString
 from ..streams import EndianBinaryReader, EndianBinaryWriter
 from ..helpers.TypeTreeHelper import TypeTreeNode
 
-RECURSION_LIMIT = sys.getrecursionlimit()
+from struct import Struct
+
+from .. import config
 
 
 class SerializedFileHeader:
@@ -86,11 +86,11 @@ class BuildType:
         self.build_type = build_type
 
     @property
-    def is_alpha(self):
+    def isAlpha(self):
         return self.build_type == "a"
 
     @property
-    def is_path(self):
+    def isPatch(self):
         return self.build_type == "p"
 
 
@@ -122,11 +122,10 @@ class SerializedType:
             self.old_type_hash = reader.read_bytes(16)
 
         if serialized_file._enable_type_tree:
-            type_tree = []
             if version >= 12 or version == 10:
-                _, self.string_data = serialized_file.read_type_tree_blob()
+                self.nodes, self.string_data = serialized_file.read_type_tree_blob()
             else:
-                serialized_file.read_type_tree(type_tree)
+                self.nodes = serialized_file.read_type_tree()
 
             if version >= 21:
                 if is_ref_type:
@@ -283,7 +282,8 @@ class SerializedFile(File.File):
                 SerializedType(reader, self, True) for _ in range(ref_type_count)
             ]
 
-        self._enable_type_tree = False
+        if config.SERIALIZED_FILE_PARSE_TYPETREE is False:
+            self._enable_type_tree = False
 
         if header.version >= 5:
             self.userInformation = reader.read_string_to_null()
@@ -306,18 +306,12 @@ class SerializedFile(File.File):
 
     def set_version(self, string_version):
         self.unity_version = string_version
-        if string_version == "0.0.0":
+        if not string_version or string_version == "0.0.0":
             # weird case, but apparently can happen?
             # check "cant read Texture2D by 2020.3.13 f1 AssetBundle #77" for details
             string_version = self.parent.version_engine
-            if string_version == "0.0.0":
-                global VERSION_WARNED
-                if not VERSION_WARNED:
-                    print(
-                        f"Warning: 0.0.0 version found, defaulting to UnityPy.config.FALLBACK_UNITY_VERSION\n{config.FALLBACK_UNITY_VERSION}"
-                    )
-                    VERSION_WARNED = True
-                string_version = config.FALLBACK_UNITY_VERSION
+            if not string_version or string_version == "0.0.0":
+                string_version = config.get_fallback_version()
         build_type = re.findall(r"([^\d.])", string_version)
         self.build_type = BuildType(build_type[0] if build_type else "")
         version_split = re.split(r"\D", string_version)
@@ -342,15 +336,15 @@ class SerializedFile(File.File):
 
             type_tree.append(type_tree_node)
             if self.header.version == 2:
-                type_tree_node.variable_count = self.reader.read_int()
+                type_tree_node.m_VariableCount = self.reader.read_int()
 
             if self.header.version != 3:
-                type_tree_node.index = self.reader.read_int()
+                type_tree_node.m_Index = self.reader.read_int()
 
-            type_tree_node.is_array = self.reader.read_int()
-            type_tree_node.version = self.reader.read_int()
+            type_tree_node.m_TypeFlags = self.reader.read_int()
+            type_tree_node.m_Version = self.reader.read_int()
             if self.header.version != 3:
-                type_tree_node.meta_flag = self.reader.read_int()
+                type_tree_node.m_MetaFlag = self.reader.read_int()
 
             children_count = self.reader.read_int()
             if children_count:
@@ -383,14 +377,14 @@ class SerializedFile(File.File):
             reader.read(string_buffer_size), reader.endian
         )
 
-        #if not config.SERIALIZED_FILE_PARSE_TYPETREE:
-        #    return [], string_buffer_reader.bytes
+        if not config.SERIALIZED_FILE_PARSE_TYPETREE:
+            return [], string_buffer_reader.bytes
 
         type_tree = [
             TypeTreeNode(
                 **dict(zip(keys, raw_node)),
-                m_Type=read_string(string_buffer_reader, raw_node[3]),
-                m_Name=read_string(string_buffer_reader, raw_node[4]),
+                m_Type = read_string(string_buffer_reader, raw_node[3]),
+                m_Name = read_string(string_buffer_reader, raw_node[4]),
             )
             for i, raw_node in enumerate(node_struct.iter_unpack(struct_data))
         ]
@@ -559,26 +553,26 @@ class SerializedFile(File.File):
 
     def save_type_tree(self, nodes: list, writer: EndianBinaryWriter):
         for i, node in nodes:
-            writer.write_string_to_null(node.type)
-            writer.write_string_to_null(node.name)
+            writer.write_string_to_null(node.m_Type)
+            writer.write_string_to_null(node.m_Name)
             writer.write_int(node.byte_size)
             if self.header.version == 2:
-                writer.write_int(node.variable_count)
+                writer.write_int(node.m_VariableCount)
 
             if self.header.version != 3:
-                writer.write_int(node.index)
+                writer.write_int(node.m_Index)
 
-            writer.write_int(node.is_array)
-            writer.write_int(node.version)
+            writer.write_int(node.m_TypeFlags)
+            writer.write_int(node.m_Version)
             if self.header.version != 3:
-                writer.write_int(node.meta_flag)
+                writer.write_int(node.m_MetaFlag)
 
             # calc children count
             children_count = 0
             for node2 in nodes[i + 1 :]:
-                if node2.level == node.level:
+                if node2.m_Level == node.m_Level:
                     break
-                if node2.level == node.level - 1:
+                if node2.m_Level == node.m_Level - 1:
                     children_count += 1
             writer.write_int(children_count)
 
@@ -591,7 +585,7 @@ class SerializedFile(File.File):
         string_buffer = EndianBinaryWriter()
         string_buffer.write(str_data)
         strings_values = [
-            (node.type_str_offset, node.name_str_offset) for node in nodes
+            (node.m_TypeStrOffset, node.m_NameStrOffset) for node in nodes
         ]
 
         # number of nodes
@@ -602,24 +596,24 @@ class SerializedFile(File.File):
         # nodes
         for i, node in enumerate(nodes):
             # version
-            writer.write_u_short(node.version)
+            writer.write_u_short(node.m_Version)
             # level
-            writer.write_byte(node.level)
+            writer.write_byte(node.m_Level)
             # is array
-            writer.write_boolean(node.is_array)
+            writer.write_u_byte(node.m_TypeFlags)
             # type str offfset
             writer.write_u_int(strings_values[i][0])
             # name str offset
             writer.write_u_int(strings_values[i][1])
             # byte size
-            writer.write_int(node.byte_size)
+            writer.write_int(node.m_ByteSize)
             # index
-            writer.write_int(node.index)
+            writer.write_int(node.m_Index)
             # meta flag
-            writer.write_int(node.meta_flag)
+            writer.write_int(node.m_MetaFlag)
             # ref hash
             if self.header.version > 19:
-                writer.write_u_long(node.ref_type_hash)
+                writer.write_u_long(node.m_RefTypeHash)
 
         # string buffer
         writer.write(string_buffer.bytes)
@@ -635,8 +629,4 @@ def read_string(string_buffer_reader: EndianBinaryReader, value: int) -> str:
         return string_buffer_reader.read_string_to_null()
 
     offset = value & 0x7FFFFFFF
-    if offset in CommonString:
-        return CommonString[offset]
-
-    return str(offset)
-
+    return CommonString.get(offset, str(offset))

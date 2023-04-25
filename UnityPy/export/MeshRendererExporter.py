@@ -1,5 +1,6 @@
 import os
-from ..classes import Renderer, SkinnedMeshRenderer, Material
+from ..classes import Renderer, SkinnedMeshRenderer, Material, Texture2D
+from ..enums import ClassIDType
 from .MeshExporter import export_mesh_obj
 
 
@@ -17,8 +18,7 @@ def get_mesh(meshR: Renderer):
 
 
 def export_mesh_renderer(obj: Renderer, export_dir: str) -> None:
-    env = mesh.assets_file.enviroment
-    env.fs.makedirs(export_dir, exist_ok=True)
+    os.makedirs(export_dir, exist_ok=True)
     meshR = obj.read()
     mesh = get_mesh(meshR)
     if not mesh:
@@ -49,25 +49,18 @@ def export_mesh_renderer(obj: Renderer, export_dir: str) -> None:
             if not texEnv.m_Texture:
                 continue
             tex = texEnv.m_Texture.read()
-            texName = f"{tex.m_Name if tex.m_Name else key}.png"
-            with env.fs.open(env.fs.sep.join([export_dir, texName]), "wb") as f:
-                tex.read().image.save(f)
+            texName = f"{tex.name if tex.name else key}.png"
+            tex.read().image.save(os.path.join(export_dir, texName))
 
     # save .obj
-    with env.fs.open(
-        env.fs.sep.join([export_dir, f"{mesh.m_Name}.obj"]),
-        "wt",
-        encoding="utf8",
-        newline="",
+    with open(
+        os.path.join(export_dir, f"{mesh.name}.obj"), "wt", encoding="utf8", newline=""
     ) as f:
         f.write(export_mesh_obj(mesh, material_names))
 
     # save .mtl
-    with env.fs.open(
-        env.fs.sep.join([export_dir, f"{mesh.m_Name}.mtl"]),
-        "wt",
-        encoding="utf8",
-        newline="",
+    with open(
+        os.path.join(export_dir, f"{mesh.name}.mtl"), "wt", encoding="utf8", newline=""
     ) as f:
         f.write("\n".join(materials))
 
@@ -121,7 +114,7 @@ def export_material(mat: Material) -> str:
         if not texEnv.m_Texture:
             continue
         tex = texEnv.m_Texture.read()
-        texName = f"{tex.m_Name if tex.m_Name else key}.png"
+        texName = f"{tex.name if tex.name else key}.png"
         if key == "_MainTex":
             sb.append(f"map_Kd {texName}")
         elif key == "_BumpMap":
