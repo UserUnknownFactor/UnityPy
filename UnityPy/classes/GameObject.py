@@ -59,5 +59,4 @@ class GameObject(EditorExtension):
             save_ptr(self.m_Components[i], writer)
         reader.write_int(self.m_Layer)
         reader.write_aligned_string(self.name)
-        
-        
+

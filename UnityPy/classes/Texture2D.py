@@ -30,18 +30,25 @@ class Texture2D(Texture):
         img_data, tex_format = Texture2DConverter.image_to_texture2d(
             img, self.m_TextureFormat
         )
-		
-        self.image_data = img_data
-        self.m_TextureFormat = tex_format
 
         # disable mipmaps as we don't store them ourselves by default
         if self.version[:2] < (5, 2):  # 5.2 down
             self.m_MipMap = False
-        else:
-            self.m_MipCount = 1
+
+        self.image_data = img_data
+        self.m_MipCount = 1
+        # img.width * img.height * (cahnnel count = len(img.getbands()))
+        self.m_TextureFormat = tex_format
 
     @property
     def image_data(self):
+        if not self._image_data and self.m_StreamData is not None:
+            self._image_data = get_resource_data(
+                self.m_StreamData.path,
+                self.assets_file,
+                self.m_StreamData.offset,
+                self.m_StreamData.size,
+            )
         return self._image_data
 
     def reset_streamdata(self):
@@ -53,9 +60,9 @@ class Texture2D(Texture):
 
     @image_data.setter
     def image_data(self, data: bytes):
-        self._image_data = data
-		 # img.width * img.height * len(img.getbands())
-        self.m_CompleteImageSize = len(data)
+        self._image_data = data if data else None
+        # img.width * img.height * ( channel count = len(img.getbands()) )
+        self.m_CompleteImageSize = len(data) if data else 0
 
         # prefer writing to cab if possible, but...
         self.reset_streamdata()
@@ -97,16 +104,19 @@ class Texture2D(Texture):
                     re_img, target_format
                 )[0]
 
-        if in_cab:
-            self._image_data = img_data
-        else:
-            self.image_data = img_data
-        self.m_TextureFormat = tex_format
-		
         if self.version[:2] < (5, 2):  # 5.2 down
             self.m_MipMap = mipmap_count > 1
         else:
             self.m_MipCount = mipmap_count
+
+
+        if in_cab:
+            self.image_data = img_data
+        else:
+            self.image_data = img_data
+            #self.reset_streamdata()
+
+        self.m_TextureFormat = tex_format
 
     def __init__(self, reader):
         super().__init__(reader=reader)
@@ -158,13 +168,8 @@ class Texture2D(Texture):
         if version >= (5, 3):  # 5.3 and up
             # always read the StreamingInfo for resaving
             self.m_StreamData = StreamingInfo(reader, version)
-            if image_data_size == 0 and self.m_StreamData.path:
-                self._image_data = get_resource_data(
-                    self.m_StreamData.path,
-                    self.assets_file,
-                    self.m_StreamData.offset,
-                    self.m_StreamData.size,
-                )
+            # don't read the data right away,
+            # as we don't want the parser break if the file is missing
 
     def save(self, writer: EndianBinaryWriter = None):
         if writer is None:

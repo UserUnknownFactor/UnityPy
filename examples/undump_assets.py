@@ -1,7 +1,8 @@
 import os, sys, struct, json
 from glob import glob
+from UnityPy import Environment
+from UnityPy.streams import EndianBinaryReader, EndianBinaryWriter
 from functools import partial
-import UnityPy
 from UnityPy.math import Vector2, Rectangle
 from PIL import Image
 from tqdm import tqdm
@@ -22,6 +23,21 @@ ASSEMBLY_TREES = dict()
 if os.path.isfile("assembly_typetrees.json"):
     with open("assembly_typetrees.json", "r", encoding="utf-8-sig") as f:
         ASSEMBLY_TREES = json.loads(f.read())
+
+def get_encryption_func(key):
+    def encryption_func(data, pos):
+        return data
+    return encryption_func
+
+def get_reader_func(key):
+    def reader_generator(fn):
+        return EndianBinaryReader(fn, encrypt_func=get_encryption_func(key))
+    return reader_generator
+
+def get_writer_func(key):
+    def writer_generator(fn):
+        return EndianBinaryWriter(b"", encrypt_func=get_encryption_func(key))
+    return writer_generator
 
 def base_name(path):
     return os.path.splitext(os.path.basename(path))[0]
@@ -65,6 +81,11 @@ def main():
                     return [obj.path_id]
                 data.image = _img
             data.save()
+            obj.assets_file.mark_changed()
+        elif objfmt == "PlayerSettings":
+            data.companyName = "Company"
+            data.productName = "Game"
+            data.save()
         if objfmt == "TextAsset":
             fname = next((path for path in texts if name in path), None)
             if not fname: return []
@@ -85,14 +106,17 @@ def main():
         return [obj.path_id]
 
     for file_name in glob(ASSETS):
-        print(f"Processing {file_name}...")
-        extension = os.path.splitext(file_name)[1]
-        am = UnityPy.load(os.path.realpath(os.path.join(ROOT, file_name)))
-        am.out_path = OUT_PATH
-        am.progress_function = tqdm
-        am.process(partial(obj_modify, files=mbehavs), TYPES)
-        print(f"Writing results to {am.out_path}{os.path.basename(file_name)}...")
-        am.save(pack= "lz4") #"none") #
+        am = Environment()
+        if am is not None:
+            am.out_path = os.path.dirname(OUT_PATH + file_name.replace(ROOT, '').replace("\\original\\", ''))
+            am.load_file(file_name)
+            #am.load_file(get_reader_func(key)(file_name), name=file_name)
+            print(f"Processing {file_name}...")
+            am.progress_function = tqdm
+            am.process(partial(obj_modify, files=mbehavs), TYPES)
+            am.save(pack="none")
+            #am.save(pack="lz4", writer_generator=get_writer_func(key))
+
 
 
 if __name__ == '__main__':

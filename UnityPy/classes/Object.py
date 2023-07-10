@@ -5,7 +5,6 @@ from ..streams import EndianBinaryWriter
 from ..files import ObjectReader
 import types
 from ..exceptions import TypeTreeError as TypeTreeError
-from .. import classes
 
 
 class Object(object):
@@ -46,14 +45,10 @@ class Object(object):
     def dump_typetree_structure(self) -> str:
         return self.reader.dump_typetree_structure()
 
-    def read_typetree(self, nodes: list = None) -> dict:
-        try:
-            tree = self.reader.read_typetree(nodes)
-        except TypeTreeError as e:
-            print("Failed to read TypeTree:\n", e)
-            return {}
+    def read_typetree(self, nodes: list = None, wrap: bool = False) -> dict:
+        tree = self.reader.read_typetree(nodes)
         self.type_tree = NodeHelper(tree, self.assets_file)
-        return tree
+        return self.type_tree if wrap else tree
 
     def save_typetree(self, nodes: list = None, writer: EndianBinaryWriter = None):
         def class_to_dict(value):
@@ -88,14 +83,10 @@ class Object(object):
         if intern_call:
             if self.platform == BuildTarget.NoTarget:
                 writer.write_u_int(self._object_hide_flags)
-        elif self.serialized_type.nodes:
+        else:
             # save for objects WITHOUT specific save function
             # so we have to use the typetree if it exists
             self.save_typetree()
-        else:
-            raise NotImplementedError(
-                "There is no save function for this obj.type nor has it any typetree nodes that could be used."
-            )
 
     def _save(self, writer):
         # the reader is actually an ObjectReader,
@@ -151,8 +142,10 @@ class NodeHelper:
     def __new__(cls, data, assets_file):
         if isinstance(data, dict):
             return super(NodeHelper, cls).__new__(cls)
-        elif isinstance(data, list):
+        if isinstance(data, list):
             return [NodeHelper(x, assets_file) for x in data]
+        if isinstance(data, tuple):
+            return tuple(NodeHelper(x, assets_file) for x in data)
         return data
 
     def __getitem__(self, item):

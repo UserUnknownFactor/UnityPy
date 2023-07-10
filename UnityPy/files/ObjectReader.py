@@ -35,6 +35,7 @@ class ObjectReader:
         header = assets_file.header
         types = assets_file.types
 
+        # AssetStudio ObjectInfo init
         if assets_file.big_id_enabled:
             self.path_id = reader.read_long()
         elif header.version < 14:
@@ -169,9 +170,7 @@ class ObjectReader:
                 else:
                     raise e
         if not obj:
-            typetree = self.read_typetree()
-            if typetree:
-                obj = NodeHelper(typetree, self.assets_file)
+            obj = self.read_typetree(wrap=True)
         self._last_read_pos = self.reader.Position
         return obj
 
@@ -213,10 +212,11 @@ class ObjectReader:
             raise TypeTreeError("There are no TypeTree nodes for this object.")
         return nodes
 
-    def read_typetree(self, nodes: list = None) -> dict:
+    def read_typetree(self, nodes: list = None, wrap: bool = False) -> dict:
         self.reset()
         nodes = self.get_typetree_nodes(nodes)
-        return TypeTreeHelper.read_typetree(nodes, self)
+        res = TypeTreeHelper.read_typetree(nodes, self)
+        return NodeHelper(res, self.assets_file) if wrap else res
 
     def save_typetree(
         self, tree: dict, nodes: list = None, writer: EndianBinaryWriter = None

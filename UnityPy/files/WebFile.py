@@ -1,6 +1,6 @@
 ﻿from . import File
 from ..helpers import CompressionHelper
-from ..streams import EndianBinaryReader, EndianBinaryWriter
+from ..streams import EndianBinaryReader, EndianBinaryWriter, SYS_ENDIAN
 
 
 class WebFile(File.File):
@@ -59,6 +59,7 @@ class WebFile(File.File):
             files: dict = None,
             packer: str = "none",
             signature: str = "UnityWebData1.0",
+            writer = None
     ) -> bytes:
         # solve defaults
         if not files:
@@ -71,9 +72,9 @@ class WebFile(File.File):
             name: f.bytes if isinstance(f, EndianBinaryReader) else f.save()
             for name, f in files.items()
         }
-        
-        # create writer
-        writer = EndianBinaryWriter(endian="<")
+
+        if writer is None:
+            writer = EndianBinaryWriter(endian=SYS_ENDIAN)
         # signature
         writer.write_string_to_null(signature)
         

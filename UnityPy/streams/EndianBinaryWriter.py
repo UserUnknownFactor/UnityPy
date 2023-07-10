@@ -1,25 +1,31 @@
 import io
+import sys
 from struct import pack
-
+from typing import Callable
 from ..math import Color, Matrix4x4, Quaternion, Vector2, Vector3, Vector4, Rectangle
-
+from io import IOBase, BytesIO, BufferedIOBase
 
 class EndianBinaryWriter:
+    stream: IOBase
     endian: str
     Length: int
     Position: int
-    stream: io.BufferedReader
+    Encryption: Callable
 
-    def __init__(self, input_=b"", endian=">"):
+    def __init__(self, input_=b"", endian=">", offset=None, encrypt_func=None):
         if isinstance(input_, (bytes, bytearray)):
-            self.stream = io.BytesIO(input_)
+            self.stream = BytesIO(input_)
             self.stream.seek(0, 2)
-        elif isinstance(input_, io.IOBase):
+        elif isinstance(input_, (IOBase, BufferedIOBase)):
             self.stream = input_
         else:
             raise ValueError("Invalid input type - %s." % type(input_))
         self.endian = endian
-        self.Position = self.stream.tell()
+        self.Encryption = encrypt_func
+        if offset is None:
+            self.Position = self.stream.tell()
+        else:
+            self.Position = offset
 
     @property
     def bytes(self):
@@ -41,7 +47,11 @@ class EndianBinaryWriter:
     def write(self, *args):
         if self.Position != self.stream.tell():
             self.stream.seek(self.Position)
-        ret = self.stream.write(*args)
+        ret = 0
+        if self.Encryption is not None:
+            ret = self.stream.write(self.Encryption(args[0], self.Position), *args[1:])
+        else:
+            ret = self.stream.write(*args)
         self.Position = self.stream.tell()
         return ret
 
@@ -81,14 +91,15 @@ class EndianBinaryWriter:
     def write_boolean(self, value: bool):
         self.write(pack(self.endian + "?", value))
 
-    def write_string_to_null(self, value: [str, bytes]):
+    def write_string_to_null(self, value: [str, bytes, bytearray], encoding: str="utf-8"):
         if not isinstance(value, (bytes, bytearray)):
-            self.write(value.encode("utf-8", "surrogatepass"))
+            value = value.encode(encoding, "surrogatepass")
+        self.write(value)
         self.write(b"\0")
 
-    def write_aligned_string(self, value: [str, bytes]):
+    def write_aligned_string(self, value: [str, bytes, bytearray], encoding: str="utf-8"):
         if not isinstance(value, (bytes, bytearray)):
-            value = value.encode("utf-8", "surrogatepass")
+            value = value.encode(encoding, "surrogatepass")
         self.write_int(len(value))
         self.write(value)
         self.align_stream()

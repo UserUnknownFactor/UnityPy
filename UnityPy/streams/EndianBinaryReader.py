@@ -2,12 +2,10 @@ import io
 import sys
 from struct import Struct, unpack
 import re
-from typing import List, Union
+from typing import List, Union, Callable
 from io import BytesIO, BufferedIOBase
 
-reNot0 = re.compile(b"(.*?)\x00")
-
-SYS_ENDIAN = "<" if sys.byteorder == "little" else ">"
+reNot0 = re.compile(b"(.*?)\0")
 
 from ..math import Color, Matrix4x4, Quaternion, Vector2, Vector3, Vector4, Rectangle
 
@@ -41,12 +39,14 @@ class EndianBinaryReader:
     Length: int
     Position: int
     BaseOffset: int
+    Encryption: Callable
 
     def __new__(
         cls,
         item: Union[bytes, bytearray, memoryview, BytesIO, str],
         endian: str = ">",
         offset: int = 0,
+        encrypt_func: Callable = None,
     ):
         if isinstance(item, (bytes, bytearray, memoryview)):
             obj = super(EndianBinaryReader, cls).__new__(
@@ -55,10 +55,11 @@ class EndianBinaryReader:
             obj = super(EndianBinaryReader, cls).__new__(
                 EndianBinaryReader_Streamable
             )
-        obj.__init__(item, endian)
+        obj.__init__(item, endian, offset, encrypt_func)
         return obj
 
-    def __init__(self, item, endian=">", offset=0):
+    def __init__(self, item, endian=">", offset=0, encrypt_func=None):
+        self.Encryption = encrypt_func
         self.endian = endian
         self.BaseOffset = offset
         self.Position = 0
@@ -66,11 +67,11 @@ class EndianBinaryReader:
     @property
     def bytes(self):
         # implemented by Streamable and Memoryview versions
-        return b""
+        raise NotImplementedError("bytes not implemented")
 
     def read(self, *args):
         # implemented by Streamable and Memoryview versions
-        return b""
+        raise NotImplementedError("read not implemented")
 
     def read_byte(self) -> int:
         return unpack(self.endian + "b", self.read(1))[0]
@@ -251,13 +252,15 @@ class EndianBinaryReader_Memoryview(EndianBinaryReader):
     __slots__ = ("view", "_endian", "BaseOffset", "Position", "Length")
     view: memoryview
 
-    def __init__(self, view, endian=">", offset=0):
-        super().__init__(view, endian=endian, offset=offset)
+    def __init__(self, view, endian=">", offset=0, encrypt_func: Callable = None):
+        super().__init__(view, endian=endian, offset=offset, encrypt_func=encrypt_func)
         self.view = memoryview(view)
         self.Length = len(view)
 
     @property
     def bytes(self):
+        if self.Encryption is not None:
+            return self.Encryption(self.view, self.Position)
         return self.view
 
     def dispose(self):
@@ -267,6 +270,8 @@ class EndianBinaryReader_Memoryview(EndianBinaryReader):
         if not length:
             return b""
         ret = self.view[self.Position : self.Position + length]
+        if self.Encryption is not None:
+            ret = self.Encryption(ret, self.Position)
         self.Position += length
         return ret
 
@@ -284,14 +289,16 @@ class EndianBinaryReader_Streamable(EndianBinaryReader):
     __slots__ = ("stream", "_endian", "BaseOffset")
     stream: io.BufferedReader
 
-    def __init__(self, stream, endian=">", offset=0):
+    def __init__(self, stream, endian=">", offset=0, encrypt_func: Callable = None):
         self._endian = ""
         self.stream = stream
-        super().__init__(stream, endian=endian, offset=offset)
-        self.read = self.stream.read
+        super().__init__(stream, endian=endian, offset=offset, encrypt_func=encrypt_func)
 
     def get_position(self):
         return self.stream.tell()
+
+    def seek(self, value):
+        self.stream.seek(value + self.BaseOffset)
 
     def set_position(self, value):
         self.stream.seek(value + self.BaseOffset)
@@ -322,6 +329,8 @@ class EndianBinaryReader_Streamable(EndianBinaryReader):
         self.Position = 0
         ret = self.read(self.Length)
         self.Position = last_pos
+        if self.Encryption is not None:
+            return self.Encryption(ret, last_pos)
         return ret
 
     def dispose(self):
@@ -331,5 +340,9 @@ class EndianBinaryReader_Streamable(EndianBinaryReader):
     def read(self, length: int):
         if not length:
             return b""
-        return self.stream.read(length)
+        pos = self.Position
+        ret = self.stream.read(length)
+        if self.Encryption is not None:
+            return self.Encryption(ret, pos)
+        return ret
 

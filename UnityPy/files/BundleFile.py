@@ -25,8 +25,10 @@ class BundleFile(File.File):
     decryptor: ArchiveStorageManager.ArchiveStorageDecryptor = None
     _uses_block_alignment: bool = False
 
-    def __init__(self, reader: EndianBinaryReader, parent: File, name: str = None):
-        super().__init__(parent=parent, name=name)
+    def __init__(
+        self, reader: EndianBinaryReader, parent: File, name: str = None, **kwargs
+    ):
+        super().__init__(parent=parent, name=name, **kwargs)
         signature = self.signature = reader.read_string_to_null()
         self.version = reader.read_u_int()
         self.version_player = reader.read_string_to_null()
@@ -125,13 +127,13 @@ class BundleFile(File.File):
                 self._uses_block_alignment = True
 
         start = reader.Position
-        if (
-            self.dataflags & ArchiveFlags.BlocksInfoAtTheEnd
-        ):  # kArchiveBlocksInfoAtTheEnd
+        if (self.dataflags & ArchiveFlags.BlocksInfoAtTheEnd): 
+            # kArchiveBlocksInfoAtTheEnd
             reader.Position = reader.Length - compressedSize
             blocksInfoBytes = reader.read_bytes(compressedSize)
             reader.Position = start
-        else:  # 0x40 kArchiveBlocksAndDirectoryInfoCombined
+        else: 
+            # 0x40 kArchiveBlocksAndDirectoryInfoCombined
             blocksInfoBytes = reader.read_bytes(compressedSize)
 
         blocksInfoBytes = self.decompress_data(
@@ -177,16 +179,16 @@ class BundleFile(File.File):
                     reader.read_bytes(blockInfo.compressedSize),
                     blockInfo.uncompressedSize,
                     blockInfo.flags,
-                    i,
+                    index,
                 )
-                for i, blockInfo in enumerate(m_BlocksInfo)
+                for index, blockInfo in enumerate(m_BlocksInfo)
             ),
             offset=(blocksInfoReader.real_offset()),
         )
 
         return m_DirectoryInfo, blocksReader
 
-    def save(self, packer=None):
+    def save(self, packer=None, writer=None):
         """
         Rewrites the BundleFile and returns it as bytes object.
 
@@ -203,7 +205,8 @@ class BundleFile(File.File):
         #     format        (int)
         #     version_player    (string_to_null)
         #     version_engine    (string_to_null)
-        writer = EndianBinaryWriter()
+        if writer is None:
+            writer = EndianBinaryWriter()
 
         writer.write_string_to_null(self.signature)
         writer.write_u_int(self.version)
@@ -234,7 +237,8 @@ class BundleFile(File.File):
                 raise NotImplementedError("UnityFS - Packer:", packer)
         return writer.bytes
 
-    def save_fs(self, writer: EndianBinaryWriter, data_flag: int, block_info_flag: int):
+    def save_fs(self, writer: EndianBinaryWriter, data_flag: int, block_info_flag: int, data_writer=None):
+        """ Saves UnityFS format file """
         # header
         # compressed blockinfo (block details & directionary)
         # compressed assets
@@ -284,7 +288,10 @@ class BundleFile(File.File):
 
         # file list & file data
         # prep nodes and build up block data
-        data_writer = EndianBinaryWriter()
+
+        if data_writer is None:
+            data_writer = EndianBinaryWriter(endian=writer.endian)
+
         files = [
             (
                 name,
@@ -418,18 +425,18 @@ class BundleFile(File.File):
         -------
         bytes
             The decompressed data."""
-        comp_flag = CompressionFlags(flags & ArchiveFlags.CompressionTypeMask)
 
+        if self.decryptor is not None and flags & 0x100:
+            compressed_data = self.decryptor.decrypt_block(compressed_data, index)
+
+        comp_flag = CompressionFlags(flags & ArchiveFlags.CompressionTypeMask)
         if comp_flag == CompressionFlags.LZMA:  # LZMA
-            return CompressionHelper.decompress_lzma(compressed_data)
+            compressed_data = CompressionHelper.decompress_lzma(compressed_data)
         elif comp_flag in [CompressionFlags.LZ4, CompressionFlags.LZ4HC]:  # LZ4, LZ4HC
-            if self.decryptor is not None and flags & 0x100:
-                compressed_data = self.decryptor.decrypt_block(compressed_data, index)
-            return CompressionHelper.decompress_lz4(compressed_data, uncompressed_size)
+            compressed_data = CompressionHelper.decompress_lz4(compressed_data, uncompressed_size)
         elif comp_flag == CompressionFlags.LZHAM:  # LZHAM
             raise NotImplementedError("LZHAM decompression not implemented")
-        else:
-            return compressed_data
+        return compressed_data
 
     def get_version_tuple(self) -> Tuple[int, int, int]:
         """Returns the version as a tuple."""

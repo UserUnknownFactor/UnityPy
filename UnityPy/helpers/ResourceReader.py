@@ -49,11 +49,10 @@ def search_resource(res_path, assets_file):
     c = assets_file
     path = getattr(assets_file, "path", None)
     while not path:
-        c = getattr(c,"parent",None)
+        c = getattr(c, "parent", None)
         if c == None:
-            raise FileNotFoundError(
-                f"Can't find the resource file {res_path}"
-            )
+            path = "."
+            break
         path = getattr(c, "path", None)
     current_directory = path
     resource_file_path = os.path.join(current_directory, *res_path.split("/"))
@@ -61,12 +60,11 @@ def search_resource(res_path, assets_file):
         resource_file_path = search_resource_file(current_directory, base_name)
     if not os.path.isfile(resource_file_path):
         resource_file_path = search_resource_file(current_directory, base_name.replace('.assets.resS', '.resource'))
-
     if os.path.isfile(resource_file_path):
         return EndianBinaryReader(open(resource_file_path, "rb"))
     else:
         raise FileNotFoundError(
-            f"Can't find the resource file {res_path}"
+            f"Can't find the resource file with path: {resource_file_path}"
         )
 
 
@@ -74,4 +72,3 @@ def search_resource_file(path, name):
     #print("real file", path, name)
     files = glob.glob(os.path.join(path, "**", name), recursive=True)
     return files[0] if len(files) else ""
-

@@ -11,21 +11,24 @@ DirectoryInfo = namedtuple("DirectoryInfo", "path offset size")
 class File(object):
     name: str
     files: dict
+    environment: "Environment"
     cab_file: str
     is_changed: bool
     signature: str
     packer: str
+    is_dependency: bool
 
     # parent: File
     # environment: Environment
 
-    def __init__(self, parent=None, name=None):
+    def __init__(self, parent=None, name: str = None, is_dependency: bool = False):
         self.files = {}
         self.is_changed = False
         self.cab_file = "CAB-UnityPy_Mod.resS"
         self.parent = parent
         self.environment = self.environment = getattr(parent, "environment", parent) if parent else None
         self.name = basename(name) if isinstance(name, str) else ""
+        self.is_dependency = is_dependency
 
     def get_assets(self):
         if isinstance(self, SerializedFile.SerializedFile):
@@ -93,7 +96,7 @@ class File(object):
             f.flags = getattr(node, "flags", 0)
             self.files[name] = f
 
-    def get_writeable_cab(self, name: str = None):
+    def get_writeable_cab(self, name: str = None, writer: EndianBinaryWriter = None):
         """
         Creates a new cab file in the bundle that contains the given data.
         This is usefull for asset types that use resource files.
@@ -113,7 +116,9 @@ class File(object):
                     "This cab already exists and isn't an EndianBinaryWriter"
                 )
 
-        writer = EndianBinaryWriter()
+        if writer is None:
+            writer = EndianBinaryWriter()
+
         # try to find another resource file to copy the flags from
         for fname, f in self.files.items():
             if fname.endswith(".resS"):
@@ -161,4 +166,3 @@ class File(object):
 
 # recursive import requires the import down here
 from . import BundleFile, SerializedFile, WebFile, ObjectReader
-

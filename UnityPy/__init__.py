@@ -1,11 +1,11 @@
-__version__ = "1.9.28"
+__version__ = "1.10.1"
 
 from .environment import Environment
 from .helpers.ArchiveStorageManager import set_assetbundle_decrypt_key
 
 
-def load(*args):
-    return Environment(*args)
+def load(*args, **kwargs):
+    return Environment(*args, **kwargs)
 
 
 # backward compatibility

@@ -195,8 +195,8 @@ class SerializedFile(File.File):
     def files(self, value):
         self.objects = value
 
-    def __init__(self, reader: EndianBinaryReader, parent=None, name=None):
-        super().__init__(parent=parent, name=name)
+    def __init__(self, reader: EndianBinaryReader, parent=None, name=None, **kwargs):
+        super().__init__(parent=parent, name=name, **kwargs)
         self.reader = reader
 
         self.unity_version = "2.5.0f5"
@@ -303,6 +303,23 @@ class SerializedFile(File.File):
     @property
     def container(self):
         return self.container_
+
+    def load_dependencies(self, possible_dependencies: list = []):
+        """Load all external dependencies.
+
+        Parameters
+        ----------
+        possible_dependencies : list
+            List of possible dependencies for cases
+            where the target file is not listed as external.
+        """
+        for file_id in self.externals:
+            self.environment.load_file(file_id.path, True)
+        for dependency in possible_dependencies:
+            try:
+                self.environment.load_file(dependency, True)
+            except FileNotFoundError:
+                pass
 
     def set_version(self, string_version):
         self.unity_version = string_version
@@ -420,21 +437,31 @@ class SerializedFile(File.File):
 
         return cab
 
-    def save(self, packer: str = None) -> bytes:
+    def save(self, 
+            packer: str = None, 
+            writer = None,
+            meta_writer = None, 
+            data_writer = None) -> bytes:
+
         # 1. header -> has to be delayed until the very end
         # 2. data -> types, objects, scripts, ...
 
         # so write the data first
+        if writer is None:
+            writer = EndianBinaryWriter()
+        if meta_writer is None:
+            meta_writer = EndianBinaryWriter()
+        if data_writer is None:
+            data_writer = EndianBinaryWriter()
+
         header = self.header
-        meta_writer = EndianBinaryWriter(endian=header.endian)
-        data_writer = EndianBinaryWriter(endian=header.endian)
+        meta_writer.endian = header.endian
+        data_writer.endian = header.endian
 
         if header.version >= 7:
             meta_writer.write_string_to_null(self.unity_version)
-
         if header.version >= 8:
             meta_writer.write_int(self._m_target_platform)
-
         if header.version >= 13:
             meta_writer.write_boolean(self._enable_type_tree)
 
@@ -472,7 +499,6 @@ class SerializedFile(File.File):
             meta_writer.write_string_to_null(self.userInformation)
 
         # prepare header
-        writer = EndianBinaryWriter()
         header_size = 16  # 4*4
         metadata_size = meta_writer.Length
         data_size = data_writer.Length
@@ -630,3 +656,50 @@ def read_string(string_buffer_reader: EndianBinaryReader, value: int) -> str:
 
     offset = value & 0x7FFFFFFF
     return CommonString.get(offset, str(offset))
+
+
+class ContainerHelper:
+    """Helper class to allow multidict containers
+    without breaking compatibility with old versions"""
+
+    def __init__(self, container) -> None:
+        self.container = container
+        # support for getitem
+        self.container_dict = {key: value.asset for key, value in container}
+        self.path_dict = {value.asset.path_id: value.asset for key, value in container}
+
+    def items(self):
+        return ((key, value.asset) for key, value in self.container)
+
+    def keys(self):
+        return list({key for key, value in self.container})
+
+    def values(self):
+        return list({value.asset for key, value in self.container})
+
+    def __getitem__(self, key):
+        return self.container_dict[key]
+
+    def __setitem__(self, key, value):
+        raise NotImplementedError("Assigning to container is not allowed!")
+
+    def __delitem__(self, key):
+        raise NotImplementedError("Deleting from the container is not allowed!")
+
+    def __iter__(self):
+        return iter(self.keys())
+
+    def __len__(self):
+        return len(self.container)
+
+    def __getattr__(self, name: str):
+        return self.container_dict[name]
+
+    def __or__(self, other: "ContainerHelper"):
+        return ContainerHelper(list(set(self.container + other.container)))
+
+    def __str__(self):
+        return f'{{{", ".join(f"{key}: {value}" for key, value in self.items())}}}'
+
+    def __dict__(self):
+        return self.container_dict

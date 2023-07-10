@@ -1,6 +1,8 @@
 import os, sys, json, re
 from glob import glob
-import UnityPy
+from UnityPy import Environment
+from UnityPy.enums import ClassIDType
+from UnityPy.streams import EndianBinaryReader
 from collections import Counter
 import zipfile
 from tqdm import tqdm
@@ -21,23 +23,31 @@ if os.path.isfile("assembly_typetrees.json"):
     with open("assembly_typetrees.json", "r", encoding="utf-8-sig") as f:
         ASSEMBLY_TREES = json.loads(f.read())
 
+def get_encryption_func(key):
+    def encryption_func(data, pos):
+        return data # some cypher algo here
+    return encryption_func
+
 def main():
     os.makedirs(DST, exist_ok=True)
     for file_name in ASSETS:
         extension = os.path.splitext(file_name)[1]
         src = os.path.realpath(os.path.join(ROOT, file_name))
 
-        am = None
+        am = Environment()
+        if am is None:
+            continue
         if extension == ".zip":
             archive = zipfile.ZipFile(src, 'r')
             for zf in archive.namelist():
-                am = UnityPy.load(archive.open(zf))
+                am.load(archive.open(zf))
                 print("Parsing file:", zf)
         else:
-            am = UnityPy.load(src)
             print("Parsing file:", src)
-        if am is None:
-            continue
+            am.load_file(src)
+            #key = "generate here"
+            #am.load_file(EndianBinaryReader(src, encrypt_func=get_encryption_func(key)))
+            print("Parsing file:", src)
         #am.out_path = DST
         am.ignore_dir_lvls = 2
         am.progress_function = tqdm
