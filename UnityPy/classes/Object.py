@@ -176,6 +176,9 @@ class NodeHelper:
     def keys(self):
         return self.__dict__.keys()
 
+    def save(self, writer: EndianBinaryWriter = None):
+        raise NotImplementedError("This is a guessed structure, please create a proper parser for it.")
+
     def __repr__(self):
         name = getattr(self, "m_Name", None)
         if name:

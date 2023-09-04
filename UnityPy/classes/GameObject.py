@@ -23,11 +23,12 @@ class GameObject(EditorExtension):
         self.m_MeshRenderer = None
         self.m_SkinnedMeshRenderer = None
         self.m_MeshFilter = None
+        self.m_MonoBehaviour = None
 
-        self._component_size = reader.read_int()
-        self.m_Components = [None] * self._component_size
-        for i in range(component_size):
-            if self.version < (5, 5):
+        components_size = reader.read_int()
+        self.m_Components = [None] * components_size
+        for i in range(components_size):
+            if self.version[:2] < (5, 5):
                 first = reader.read_int()
             component = PPtr(reader)
             self.m_Components[i] = component
@@ -44,19 +45,29 @@ class GameObject(EditorExtension):
                 self.m_SkinnedMeshRenderer = component
             elif component.type == ClassIDType.MeshFilter:
                 self.m_MeshFilter = component
+            elif component.type == ClassIDType.MonoBehaviour:
+                self.m_MonoBehaviour = component
 
         self.m_Layer = reader.read_int()
-        self.name = reader.read_aligned_string()
+        self.m_Name = reader.read_aligned_string()
+        if self.version > (2019, ):
+            self.m_Tag = reader.read_u_short()
+            self.m_IsActive = reader.read_boolean()
         
-    def save(self, writer: EndianBinaryWriter = None):
+    def save(self, writer: EndianBinaryWriter = None, intern_call=True):
         if not writer:
             writer = EndianBinaryWriter(endian=self.reader.endian)
         super().save(writer)
-        reader.write_int(self._component_size)
-        for i in range(self._component_size):
+        component_size = len(self.m_Components)
+        writer.write_int(component_size)
+        for i in range(component_size):
             if self.version[:2] < (5, 5):
-                reader.write_int(self._firsts[i])
+                writer.write_int(self._firsts[i])
             save_ptr(self.m_Components[i], writer)
-        reader.write_int(self.m_Layer)
-        reader.write_aligned_string(self.name)
-
+        writer.write_int(self.m_Layer)
+        writer.write_aligned_string(self.m_Name)
+        if self.version > (2019, ):
+            writer.write_u_short(self.m_Tag)
+            writer.write_boolean(self.m_IsActive)
+        if not intern_call:
+            self.set_raw_data(writer.bytes)

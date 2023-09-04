@@ -61,7 +61,6 @@ class PlayerSettings(Object):
         self.companyName = reader.read_aligned_string()
         self.productName = reader.read_aligned_string()
 
-        """
         self.defaultCursor = reader.read_bytes(16)
         self.cursorHotspot = reader.read_int()
         self.m_SplashScreenBackgroundColor = reader.read_vector4()
@@ -69,6 +68,7 @@ class PlayerSettings(Object):
         self.m_ShowUnitySplashScreen = reader.read_boolean()
         self.m_ShowUnitySplashLogo = reader.read_boolean()
         reader.align_stream()
+        """
         self.m_SplashScreenOverlayOpacity = reader.read_float()
         self.m_SplashScreenAnimation = reader.read_int()
         self.m_SplashScreenLogoStyle = reader.read_int()
@@ -250,15 +250,11 @@ class PlayerSettings(Object):
         self.virtualTexturingSupportEnabled = reader.read_boolean()
         self.uploadClearedTextureDataAfterCreationFromScript = reader.read_boolean()
         """
+        self.the_rest = reader.read_the_rest(reader)
 
-        self.the_rest = reader.read_the_rest(reader.byte_size, reader.byte_start)
-
-    def save(self, writer: EndianBinaryWriter = None, raw_data: bytes = None):
+    def save(self, writer: EndianBinaryWriter = None):
         if writer is None:
             writer = EndianBinaryWriter(endian=self.reader.endian)
-        if not raw_data:
-            ValueError("No raw data given")
-
         super().save(writer, intern_call=True)
         version = self.version
         if version >= (5, 4):  # 5.4.0 nad up
@@ -283,7 +279,15 @@ class PlayerSettings(Object):
             writer.write_int(self.accelerometerFrequency)
         writer.write_aligned_string(self.companyName)
         writer.write_aligned_string(self.productName)
-        writer.write_bytes(self.the_rest)
 
+        writer.write_bytes(self.defaultCursor)
+        writer.write_int(self.cursorHotspot)
+        writer.write_vector4(self.m_SplashScreenBackgroundColor)
+
+        writer.write_boolean(self.m_ShowUnitySplashScreen)
+        writer.write_boolean(self.m_ShowUnitySplashLogo)
+        writer.align_stream()
+
+        writer.write_bytes(self.the_rest)
         self.set_raw_data(writer.bytes)
 

@@ -243,9 +243,9 @@ class EndianBinaryReader:
         """
         return self.BaseOffset + self.Position
 
-    def read_the_rest(self, obj_start: int, obj_size: int) -> bytes:
-        """Returns the rest of the current reader bytes."""
-        return self.read_bytes(obj_size - (self.Position - obj_start))
+    def read_the_rest(self, reader) -> bytes:
+        """Returns the rest of the provided reader's bytes."""
+        return self.read_bytes(reader.byte_size - (self.Position - reader.byte_start))
 
 
 class EndianBinaryReader_Memoryview(EndianBinaryReader):

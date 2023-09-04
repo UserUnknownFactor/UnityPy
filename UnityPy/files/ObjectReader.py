@@ -1,6 +1,4 @@
 from ..enums import ClassIDType
-
-from . import SerializedFile
 from .. import classes
 from ..classes.Object import NodeHelper
 from ..streams import EndianBinaryReader, EndianBinaryWriter
@@ -8,6 +6,7 @@ from ..helpers import TypeTreeHelper
 from ..helpers.Tpk import get_typetree_nodes
 from ..exceptions import TypeTreeError
 
+DEBUG = False
 
 class ObjectReader:
     byte_start: int
@@ -172,6 +171,9 @@ class ObjectReader:
         if not obj:
             obj = self.read_typetree(wrap=True)
         self._last_read_pos = self.reader.Position
+        end_pos = self.byte_start + self.byte_size
+        if DEBUG and self._last_read_pos < end_pos and obj:
+            raise Exception(f"self._last_read_pos < end_pos: {self._last_read_pos} < {end_pos} (diff = {end_pos-self._last_read_pos})")
         return obj
 
     def get(self, key, default=None):
@@ -203,7 +205,7 @@ class ObjectReader:
     def get_typetree_nodes(self, nodes: list = None) -> list:
         if nodes:
             return nodes
-        
+
         if self.serialized_type:
             nodes = self.serialized_type.nodes
         if not nodes:
