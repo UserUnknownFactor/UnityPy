@@ -55,7 +55,7 @@ class Sprite(NamedObject):
                 2020,
                 3,
             ):
-                self.m_Bones = [SpriteBone() for _ in range(m_BonesSize)]
+                self.m_Bones = [SpriteBone(reader) for _ in range(m_BonesSize)]
             else:
                 self.m_Bones = [reader.read_vector2_array() for _ in range(m_BonesSize)]
 

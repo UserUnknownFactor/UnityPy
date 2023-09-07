@@ -154,7 +154,7 @@ class ObjectReader:
     def reset(self):
         self.reader.Position = self.byte_start
 
-    def read(self, return_typetree_on_error: bool=True):
+    def read(self, return_typetree_on_error: bool=False):
         cls = getattr(classes, self.type.name, None)
 
         obj = None

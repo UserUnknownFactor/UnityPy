@@ -69,11 +69,15 @@ def image_to_texture2d(img: Image.Image, target_texture_format: TF, flip: bool =
         TF.PVRTC_RGB4,
         TF.ATC_RGB4,
     ]:
-        enc_img = img.tobytes("raw", "RGB")
+        if img.mode != "RGB":
+            img = img.convert("RGB")
+        enc_img = img.tobytes("raw")
         tex_format = TF.RGB24
     # everything else defaulted to RGBA
     else:
-        enc_img = img.tobytes("raw", "RGBA")
+        if img.mode != "RGBA":
+            img = img.convert("RGBA")
+        enc_img = img.tobytes("raw")
         tex_format = TF.RGBA32
 
     return enc_img, tex_format
