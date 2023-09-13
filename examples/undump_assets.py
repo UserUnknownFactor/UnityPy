@@ -52,6 +52,16 @@ def main():
         objfmt = obj.type.name
         data = obj.read()
         name = f"{asset.name}-{obj.path_id}."
+        elif objfmt == "RectTransform":
+            if obj.path_id == 1234: # or load from somewhere
+                #print(data.m_AnchoredPosition.X,data.m_AnchoredPosition.Y,"->", end='')
+                data.m_AnchoredPosition.X =  323
+                data.m_AnchoredPosition.Y = -60
+                #print(data.m_AnchoredPosition.X,data.m_AnchoredPosition.Y)
+                data.save()
+        elif objfmt == "SpriteRenderer":
+            data.m_DrawMode = 1
+            obj.save_typetree(data) # data is of type NodeHelper here
         if objfmt == "Sprite":
             fname = next((path for path in sprites if data.name == base_name(path)), None)
             if not fname: return []
@@ -60,13 +70,18 @@ def main():
                 if _img.height != int(data.m_Rect.height) or _img.width != int(data.m_Rect.width):
                     return [obj.path_id]
             if data.name in ["demo_1_sprite_object_mod"]:
-                data.m_RD.settingsRaw = 2
+                data.m_RD.settingsRaw.settingsRaw = 2
                 data.m_RD.textureRect = data.m_Rect
                 data.m_RD.textureRectOffset = Vector2(0, 0)
-                data.m_RD.uvTransform.X = 0
-                data.m_RD.uvTransform.Y = 0
-                data.m_RD.uvTransform.Z = 0
-                data.m_RD.uvTransform.W = 0
+                #data.m_RD.m_SubMeshes = []
+                #data.m_RD.m_IndexBuffer = b''
+                #data.m_RD.m_VertexData.m_VertexCount = 0
+                #data.m_RD.m_VertexData.m_Channels = []
+                #data.m_RD.m_VertexData.m_Streams = []
+                #data.m_RD.uvTransform.X = 0
+                #data.m_RD.uvTransform.Y = 0
+                #data.m_RD.uvTransform.Z = 0
+                #data.m_RD.uvTransform.W = 0
                 data.save()
             else:
                 with open(fname + ".bin", "rb") as dat:
@@ -92,6 +107,7 @@ def main():
             with open(fname, "r", encoding="utf-8") as txt:
                 data.text = txt.read()
             data.save()
+            obj.assets_file.mark_changed()
         elif objfmt == "MonoBehaviour" or objfmt == "Shader":
             fname = next((path for path in mbehavs if name in path), None)
             if not fname: return []
@@ -99,18 +115,23 @@ def main():
                 script = data.m_Script.read()
                 nodes = ASSEMBLY_TREES[script.m_ClassName]
                 with open(fname, "r", encoding="utf-8-sig") as dat:
-                    obj.save_typetree(json.load(dat), nodes)
+                    try:
+                        jtranslated = json.load(dat)
+                        obj.save_typetree(jtranslated, nodes)
+                    except Exception as e:
+                        raise Exception(f"Error {e} in {fname}:\n{e.message}")
             else:
                 with open(fname, "rb") as dat:
                     obj.set_raw_data(dat.read())
         return [obj.path_id]
 
+    print(f"Output folder is {OUT_PATH}")
     for file_name in glob(ASSETS):
         am = Environment()
         if am is not None:
             am.out_path = os.path.dirname(OUT_PATH + file_name.replace(ROOT, '').replace("\\original\\", ''))
-            am.load_file(file_name)
-            #am.load_file(get_reader_func(key)(file_name), name=file_name)
+            am.load_file(file_name, name=base_name(file_name))
+            #am.load_file(get_reader_func(key)(file_name), name=base_name(file_name))
             print(f"Processing {file_name}...")
             am.progress_function = tqdm
             am.process(partial(obj_modify, files=mbehavs), TYPES)

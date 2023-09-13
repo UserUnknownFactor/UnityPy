@@ -27,6 +27,15 @@ class PPtr:
         self.assets_file = reader.assets_file
         self._obj = None
 
+    def __getitem__(self, item):
+        if item in ["file_id", "m_FileID"]:
+            return self.file_id
+        if item in ["path_id", "m_PathID"]:
+            return self.path_id
+        if item in ["index", "m_Index"]:
+            return self.index
+        return getattr(self, item)
+
     def save(self, writer: EndianBinaryWriter):
         save_ptr(self, writer)
 

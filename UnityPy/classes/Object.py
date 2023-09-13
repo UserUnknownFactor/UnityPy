@@ -176,8 +176,8 @@ class NodeHelper:
     def keys(self):
         return self.__dict__.keys()
 
-    def save(self, writer: EndianBinaryWriter = None):
-        raise NotImplementedError("This is a guessed structure, please create a proper parser for it.")
+    def save(self, *args, **kwargs):
+        raise NotImplementedError("This is a guessed structure, please create its proper parser or use the Object's save_typetree(<this NodeHelper>) method.")
 
     def __repr__(self):
         name = getattr(self, "m_Name", None)
