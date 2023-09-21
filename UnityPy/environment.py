@@ -124,6 +124,7 @@ class Environment:
                 str(file.__hash__()) if hasattr(file, "__hash__") else "",
         ))
 
+        f = None
         if typ == FileType.AssetsFile:
             f = files.SerializedFile(reader, parent, name=stream_name)
             self.register_cab(stream_name, f)
@@ -154,14 +155,17 @@ class Environment:
         self.load_assets(z.namelist(), lambda x: z.open(x, "r"))
         z.close()
 
-    def save(self, pack: str = "none", writer_generator: Callable = None):
+    def save(self, pack: str = "none", writer_generator: Callable = None, out_path=None):
         """Saves all changed assets.
         Mark assets as changed using `.mark_changed()`.
         pack = "none" (default) or "lz4"
         """
         for f in self.files:
-            if self.files[f].is_changed:
-                fn = os.path.join(self.out_path, os.path.basename(f))
+            opath = self.out_path
+            if out_path:
+                opath = out_path
+            if hasattr(self.files[f], "is_changed") and self.files[f].is_changed:
+                fn = os.path.join(opath, os.path.basename(f))
                 with open(fn, "wb") as out:
                     out.write(self.files[f].save(packer=pack, writer=writer_generator(fn) if writer_generator else None))
 

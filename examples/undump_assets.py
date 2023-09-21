@@ -2,6 +2,8 @@ import os, sys, struct, json
 from glob import glob
 from UnityPy import Environment
 from UnityPy.streams import EndianBinaryReader, EndianBinaryWriter
+from UnityPy.enums import ClassIDType
+from UnityPy.enums import TextureFormat
 from functools import partial
 from UnityPy.math import Vector2, Rectangle
 from PIL import Image
@@ -11,7 +13,9 @@ ROOT = os.path.abspath(os.getcwd()) # base directory
 TYPES = ["MonoBehaviour", "Texture2D", "TextAsset", "Sprite", "Shader"]
 #DST = os.path.join(ROOT, "output") # destination folder
 
-ASSETS = os.path.join(ROOT, "original", "data.unity3d") # source folder or file
+ASSETS = glob(
+    os.path.join(ROOT, "original", "data.unity3d"), recursive=True)
+) # source folder or files
 OUT_PATH = "translation_out"
 IN_TEXTS = "translation_out\\assets\\*.txt"
 IN_IMAGES = "images\\**\\*.png"
@@ -24,9 +28,11 @@ if os.path.isfile("assembly_typetrees.json"):
     with open("assembly_typetrees.json", "r", encoding="utf-8-sig") as f:
         ASSEMBLY_TREES = json.loads(f.read())
 
+from numpy import frombuffer, uint8, bitwise_and, bitwise_xor, right_shift, concatenate, dtype, fromstring, uint64, uint32, uint16, ubyte
 def get_encryption_func(key):
     def encryption_func(data, pos):
-        return data
+        data = frombuffer(data, dtype=ubyte)
+        return bytes(bitwise_xor(data, key))
     return encryption_func
 
 def get_reader_func(key):
@@ -46,23 +52,28 @@ def main():
     texts = glob(IN_TEXTS)
     images = glob(IN_IMAGES, recursive=True)
     sprites = glob(IN_SPRITES)
-    mbehavs = glob(IN_MONO_BEHAVIOURS, recursive=True) + glob(IN_JSON_MONO_BEHAVIOURS, recursive=True)
+    mbehavs = glob(IN_MONO_BEHAVIOURS, recursive=True)
+    jmbehavs = glob(IN_JSON_MONO_BEHAVIOURS, recursive=True)
 
-    def obj_modify(obj, asset, **kwargs):
-        objfmt = obj.type.name
+    def obj_modify(obj, asset_name, **kwargs):
+        objfmt = obj.type
         data = obj.read()
-        name = f"{asset.name}-{obj.path_id}."
-        elif objfmt == "RectTransform":
+        name = f"{asset_name}-{obj.path_id}."
+        if objfmt == ClassIDType.RectTransform:
             if obj.path_id == 1234: # or load from somewhere
                 #print(data.m_AnchoredPosition.X,data.m_AnchoredPosition.Y,"->", end='')
-                data.m_AnchoredPosition.X =  323
-                data.m_AnchoredPosition.Y = -60
+                data.m_AnchoredPosition.X =  123
+                data.m_AnchoredPosition.Y = -45
+                data.m_SizeDelta.X = 678
+                data.m_SizeDelta.Y = 90
+                data.m_Pivot.X = 0.4
+                data.m_AnchorMax.X = 0.6
                 #print(data.m_AnchoredPosition.X,data.m_AnchoredPosition.Y)
                 data.save()
-        elif objfmt == "SpriteRenderer":
+        elif objfmt == ClassIDType.SpriteRenderer:
             data.m_DrawMode = 1
             obj.save_typetree(data) # data is of type NodeHelper here
-        if objfmt == "Sprite":
+        if objfmt == ClassIDType.Sprite:
             fname = next((path for path in sprites if data.name == base_name(path)), None)
             if not fname: return []
             with open(fname, "rb") as img:
@@ -86,31 +97,31 @@ def main():
             else:
                 with open(fname + ".bin", "rb") as dat:
                     obj.set_raw_data(dat.read())
-        if objfmt == "Texture2D":
+        if objfmt == ClassIDType.Texture2D:
             fname = next((path for path in images if data.name == base_name(path)), None)
             if not fname: return []
             with open(fname, "rb") as img:
                 _img = Image.open(img)
                 if _img.height != data.m_Height or _img.width != data.m_Width:
-                     # it's not the same image even if names are the same
+                     # it's not the same image even if their names are the same
                     return [obj.path_id]
                 data.image = _img
             data.save()
-            obj.assets_file.mark_changed()
-        elif objfmt == "PlayerSettings":
+        elif objfmt == ClassIDType.PlayerSettings:
             data.companyName = "Company"
             data.productName = "Game"
             data.save()
-        if objfmt == "TextAsset":
+        if objfmt == ClassIDType.TextAsset:
             fname = next((path for path in texts if name in path), None)
             if not fname: return []
             with open(fname, "r", encoding="utf-8") as txt:
                 data.text = txt.read()
             data.save()
-            obj.assets_file.mark_changed()
-        elif objfmt == "MonoBehaviour" or objfmt == "Shader":
+        elif objfmt == ClassIDType.MonoBehaviour or objfmt == ClassIDType.Shader:
             fname = next((path for path in mbehavs if name in path), None)
-            if not fname: return []
+            if not fname:
+                fname = next((path for path in jmbehavs if name in path), None)
+            if not fname: return [obj.path_id]
             if ".json" == os.path.splitext(fname)[1]:
                 script = data.m_Script.read()
                 nodes = ASSEMBLY_TREES[script.m_ClassName]
@@ -126,16 +137,23 @@ def main():
         return [obj.path_id]
 
     print(f"Output folder is {OUT_PATH}")
-    for file_name in glob(ASSETS):
+    for file_name in ASSETS:
         am = Environment()
+        am.out_path = os.path.dirname(OUT_PATH + file_name.replace(ROOT, '').replace("\\original\\", ''))
+        enc_folder = "StreamingAssets"
+        is_encrypted = enc_folder in os.path.abspath(file_name)
+        if is_encrypted:
+            key = 0
+            am.load_file(EndianBinaryReader(f, encrypt_func=get_encryption_func(key)), name=file_name)
+        else:
+            am.load_file(file_name, name=file_name)
         if am is not None:
-            am.out_path = os.path.dirname(OUT_PATH + file_name.replace(ROOT, '').replace("\\original\\", ''))
-            am.load_file(file_name, name=base_name(file_name))
-            #am.load_file(get_reader_func(key)(file_name), name=base_name(file_name))
             print(f"Processing {file_name}...")
             am.progress_function = tqdm
             am.process(partial(obj_modify, files=mbehavs), TYPES)
-            am.save(pack="none")
+            gen = get_writer_func(key) if is_encrypted else None
+            opath = os.path.join(am.out_path, enc_folder) if is_encrypted else None
+            am.save(pack="none", writer_generator=gen, out_path=opath)
             #am.save(pack="lz4", writer_generator=get_writer_func(key))
 
 

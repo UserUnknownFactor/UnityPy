@@ -3,6 +3,7 @@ from .PPtr import PPtr, save_ptr
 from ..streams import EndianBinaryWriter
 from ..enums import ClassIDType
 
+
 class GameObject(EditorExtension):
     m_Components: list
     m_Layer: int
@@ -23,7 +24,6 @@ class GameObject(EditorExtension):
         self.m_MeshRenderer = None
         self.m_SkinnedMeshRenderer = None
         self.m_MeshFilter = None
-        self.m_MonoBehaviour = None
 
         components_size = reader.read_int()
         self.m_Components = [None] * components_size
@@ -45,15 +45,24 @@ class GameObject(EditorExtension):
                 self.m_SkinnedMeshRenderer = component
             elif component.type == ClassIDType.MeshFilter:
                 self.m_MeshFilter = component
-            elif component.type == ClassIDType.MonoBehaviour:
-                self.m_MonoBehaviour = component
 
         self.m_Layer = reader.read_int()
         self.m_Name = reader.read_aligned_string()
         if self.version > (2019, ):
             self.m_Tag = reader.read_u_short()
             self.m_IsActive = reader.read_boolean()
-        
+
+    def __key(self):
+        return (self.assets_file, self.path_id)
+
+    def __hash__(self):
+        return hash(self.__key())
+
+    def __eq__(self, other):
+        if isinstance(other, GameObject):
+            return self.__key() == other.__key()
+        return NotImplemented
+
     def save(self, writer: EndianBinaryWriter = None, intern_call=True):
         if not writer:
             writer = EndianBinaryWriter(endian=self.reader.endian)

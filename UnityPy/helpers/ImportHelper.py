@@ -143,5 +143,5 @@ def parse_file(
     elif typ == FileType.WebFile:
         f = files.WebFile(reader, parent, name=name, is_dependency=is_dependency)
     else:
-        f = reader
+        f = None
     return f

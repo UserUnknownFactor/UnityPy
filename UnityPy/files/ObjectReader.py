@@ -6,7 +6,6 @@ from ..helpers import TypeTreeHelper
 from ..helpers.Tpk import get_typetree_nodes
 from ..exceptions import TypeTreeError
 
-DEBUG = False
 
 class ObjectReader:
     byte_start: int
@@ -172,8 +171,8 @@ class ObjectReader:
             obj = self.read_typetree(wrap=True)
         self._last_read_pos = self.reader.Position
         end_pos = self.byte_start + self.byte_size
-        if DEBUG and self._last_read_pos < end_pos and obj:
-            raise Exception(f"self._last_read_pos < end_pos: {self._last_read_pos} < {end_pos} (diff = {end_pos-self._last_read_pos})")
+        if False and self._last_read_pos < end_pos and obj and obj.type == ClassIDType.MonoBehaviour:
+            raise Exception(f"self._last_read_pos < end_pos: {self._last_read_pos} < {end_pos} (diff = {end_pos-self._last_read_pos}) in {obj}")
         return obj
 
     def get(self, key, default=None):

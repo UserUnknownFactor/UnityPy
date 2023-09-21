@@ -12,7 +12,6 @@ class Object(object):
 
     def __init__(self, reader: ObjectReader):
         self.reader = reader
-        self.assets_file = reader.assets_file
         self.type = reader.type
         self.path_id = reader.path_id
         self.version = reader.version

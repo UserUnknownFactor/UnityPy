@@ -39,6 +39,7 @@ class Texture2D(Texture):
         self.m_MipCount = 1
         # img.width * img.height * (cahnnel count = len(img.getbands()))
         self.m_TextureFormat = tex_format
+        #print(tex_format.name)
 
     @property
     def image_data(self):

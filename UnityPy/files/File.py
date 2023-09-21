@@ -159,7 +159,7 @@ class File(object):
         return f"<{self.__class__.__name__}>"
 
     def mark_changed(self):
-        if isinstance(self.parent, File):
+        if self.parent is not None and hasattr(self.parent, "is_changed"):
             self.parent.mark_changed()
         self.is_changed = True
 
