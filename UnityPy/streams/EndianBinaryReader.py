@@ -1,38 +1,39 @@
-import io
-import sys
-from struct import Struct, unpack
-import re
+from struct import Struct, unpack, calcsize
+from re import compile
 from typing import List, Union, Callable
-from io import BytesIO, BufferedIOBase
+from io import BytesIO, BufferedIOBase, IOBase, BufferedReader
+from sys import byteorder
 
-reNot0 = re.compile(b"(.*?)\0")
+SYS_ENDIAN = "<" if byteorder == "little" else ">"
+RE_NOT_0 = compile(b"(.*?)\0")
 
 from ..math import Color, Matrix4x4, Quaternion, Vector2, Vector3, Vector4, Rectangle
 
 # generate unpack and unpack_from functions
 TYPE_PARAM_SIZE_LIST = [
-    ("short", "h", 2),
-    ("u_short", "H", 2),
-    ("int", "i", 4),
-    ("u_int", "I", 4),
-    ("long", "q", 8),
-    ("u_long", "Q", 8),
-    ("half", "e", 2),
-    ("float", "f", 4),
-    ("double", "d", 8),
-    ("vector2", "2f", 8),
-    ("vector3", "3f", 12),
-    ("vector4", "4f", 16),
+    # type_name, struct_type_id, type_size, native_type
+    ("bool", "?", 1, bool),
+    ("boolean", "?", 1, bool),
+    ("byte", "b", 1, None),
+    ("u_byte", "B", 1, None),
+    ("short", "h", 2, None),
+    ("u_short", "H", 2, None),
+    ("int", "i", 4, None),
+    ("u_int", "I", 4, None),
+    ("long", "q", 8, None),
+    ("u_long", "Q", 8, None),
+    ("half", "e", 2, None),
+    ("float", "f", 4, None),
+    ("double", "d", 8, None),
+    ("quaternion", "4f", 4 * 4, Quaternion),
+    ("color3", "3f", 3 * 4, Color),
+    ("color4", "4f", 4 * 4, Color),
+    ("rectangle_f", "4f", 4 * 4, Rectangle),
+    ("matrix", "16f", 16 * 4, Matrix4x4),
+    ("vector2", "2f", 2 * 4, Vector2),
+    ("vector3", "3f", 3 * 4, Vector3),
+    ("vector4", "4f", 4 * 4, Vector4),
 ]
-
-LOCALS = locals()
-for endian_s, endian_l in (("<", "little"), (">", "big")):
-    for typ, param, _ in TYPE_PARAM_SIZE_LIST:
-        LOCALS[f"unpack_{endian_l}_{typ}"] = Struct(f"{endian_s}{param}").unpack
-        LOCALS[f"unpack_{endian_l}_{typ}_from"] = Struct(
-            f"{endian_s}{param}"
-        ).unpack_from
-
 
 class EndianBinaryReader:
     endian: str
@@ -49,12 +50,21 @@ class EndianBinaryReader:
         encrypt_func: Callable = None,
     ):
         if isinstance(item, (bytes, bytearray, memoryview)):
-            obj = super(EndianBinaryReader, cls).__new__(
-                EndianBinaryReader_Memoryview)
-        else:
-            obj = super(EndianBinaryReader, cls).__new__(
-                EndianBinaryReader_Streamable
+            obj = super(EndianBinaryReader, cls).__new__(EndianBinaryReader_Memoryview)
+        elif isinstance(item, (IOBase, BufferedIOBase)):
+            obj = super(EndianBinaryReader, cls).__new__(EndianBinaryReader_Streamable)
+        elif isinstance(item, str):
+            item = open(item, "rb")
+            obj = super(EndianBinaryReader, cls).__new__(EndianBinaryReader_Streamable)
+        elif isinstance(item, EndianBinaryReader):
+            item = (
+                item.stream
+                if isinstance(item, EndianBinaryReader_Streamable)
+                else item.view
             )
+            return EndianBinaryReader(item, endian, offset)
+        else:
+            obj = super(EndianBinaryReader, cls).__new__(EndianBinaryReader_Streamable)
         obj.__init__(item, endian, offset, encrypt_func)
         return obj
 
@@ -73,41 +83,8 @@ class EndianBinaryReader:
         # implemented by Streamable and Memoryview versions
         raise NotImplementedError("read not implemented")
 
-    def read_byte(self) -> int:
-        return unpack(self.endian + "b", self.read(1))[0]
-
-    def read_u_byte(self) -> int:
-        return unpack(self.endian + "B", self.read(1))[0]
-
     def read_bytes(self, num) -> bytes:
         return self.read(num)
-
-    def read_short(self) -> int:
-        return unpack(self.endian + "h", self.read(2))[0]
-
-    def read_int(self) -> int:
-        return unpack(self.endian + "i", self.read(4))[0]
-
-    def read_long(self) -> int:
-        return unpack(self.endian + "q", self.read(8))[0]
-
-    def read_u_short(self) -> int:
-        return unpack(self.endian + "H", self.read(2))[0]
-
-    def read_u_int(self) -> int:
-        return unpack(self.endian + "I", self.read(4))[0]
-
-    def read_u_long(self) -> int:
-        return unpack(self.endian + "Q", self.read(8))[0]
-
-    def read_float(self) -> float:
-        return unpack(self.endian + "f", self.read(4))[0]
-
-    def read_double(self) -> float:
-        return unpack(self.endian + "d", self.read(8))[0]
-
-    def read_boolean(self) -> bool:
-        return bool(unpack(self.endian + "?", self.read(1))[0])
 
     def read_string(self, size=None, encoding="utf-8") -> str:
         if size is None:
@@ -141,37 +118,8 @@ class EndianBinaryReader:
     def align_stream(self, alignment=4):
         self.Position += (alignment - self.Position % alignment) % alignment
 
-    def read_quaternion(self) -> Quaternion:
-        return Quaternion(
-            self.read_float(), self.read_float(), self.read_float(), self.read_float()
-        )
-
-    def read_vector2(self) -> Vector2:
-        return Vector2(self.read_float(), self.read_float())
-
-    def read_vector3(self) -> Vector3:
-        return Vector3(self.read_float(), self.read_float(), self.read_float())
-
-    def read_vector4(self) -> Vector4:
-        return Vector4(
-            self.read_float(), self.read_float(), self.read_float(), self.read_float()
-        )
-
-    def read_rectangle_f(self) -> Rectangle:
-        return Rectangle(
-            self.read_float(), self.read_float(), self.read_float(), self.read_float()
-        )
-
-    def read_color4(self) -> Color:
-        return Color(
-            self.read_float(), self.read_float(), self.read_float(), self.read_float()
-        )
-
     def read_byte_array(self) -> bytes:
         return self.read(self.read_int())
-
-    def read_matrix(self) -> Matrix4x4:
-        return Matrix4x4(self.read_float_array(16))
 
     def read_array(self, command, length: int) -> list:
         return [command() for _ in range(length)]
@@ -182,60 +130,10 @@ class EndianBinaryReader:
         struct = Struct(f"{self.endian}{length}{param}")
         return struct.unpack(self.read(struct.size))
 
-    def read_boolean_array(self, length: int = None) -> List[bool]:
-        if not length:
-            length = self.read_int()
-        return self.read_array(self.read_boolean, length)
-
-    def read_u_short_array(self, length: int = None) -> List[int]:
-        if not length:
-            length = self.read_int()
-        return self.read_array(self.read_u_short, length)
-
-    def read_short_array(self, length: int = None) -> List[int]:
-        if not length:
-            length = self.read_int()
-        return self.read_array(self.read_short, length)
-
-    def read_int_array(self, length: int = None) -> List[int]:
-        if not length:
-            length = self.read_int()
-        return self.read_array(self.read_int, length)
-
-    def read_u_int_array(self, length: int = None) -> List[int]:
-        if not length:
-            length = self.read_int()
-        return self.read_array(self.read_u_int, length)
-
-    def read_u_int_array_array(self, length: int= None):
-        if not length:
-            length = self.read_int()
-        return self.read_array(self.read_u_int_array, length)
-
-    def read_float_array(self, length: int = None):
-        if not length:
-            length = self.read_int()
-        return self.read_array(self.read_float, length)
-
     def read_string_array(self, length: int = None) -> List[str]:
         if not length:
             length = self.read_int()
         return self.read_array(self.read_aligned_string, length)
-
-    def read_vector2_array(self, length: int = None) -> List[Vector2]:
-        if not length:
-            length = self.read_int()
-        return self.read_array(self.read_vector2, length)
-
-    def read_vector4_array(self, length: int = None) -> List[Vector4]:
-        if not length:
-            length = self.read_int()
-        return self.read_array(self.read_vector4, length)
-
-    def read_matrix_array(self, length: int = None) -> List[Matrix4x4]:
-        if not length:
-            length = self.read_int()
-        return self.read_array(self.read_matrix, length)
 
     def real_offset(self) -> int:
         """Returns offset in the underlying file.
@@ -253,9 +151,28 @@ class EndianBinaryReader_Memoryview(EndianBinaryReader):
     view: memoryview
 
     def __init__(self, view, endian=">", offset=0, encrypt_func: Callable = None):
+        self._endian = ""
         super().__init__(view, endian=endian, offset=offset, encrypt_func=encrypt_func)
         self.view = memoryview(view)
         self.Length = len(view)
+
+    @property
+    def endian(self):
+        return self._endian
+
+    @endian.setter
+    def endian(self, value: str):
+        if value not in ("<", ">"):
+            raise ValueError("Invalid endian")
+        if value != self._endian:
+            setattr(
+                self,
+                "__class__",
+                EndianBinaryReader_Memoryview_LittleEndian
+                if value == "<"
+                else EndianBinaryReader_Memoryview_BigEndian,
+            )
+            self._endian = value
 
     @property
     def bytes(self):
@@ -279,15 +196,19 @@ class EndianBinaryReader_Memoryview(EndianBinaryReader):
         length = self.read_int()
         if 0 < length <= self.Length - self.Position:
             string_data = self.read_bytes(length)
-            result = bytes(string_data).decode("utf-8", "surrogateescape")
             self.align_stream()
-            return result
+            return bytes(string_data).decode("utf-8", "surrogateescape")
         return ""
 
+class EndianBinaryReader_Memoryview_LittleEndian(EndianBinaryReader_Memoryview):
+    pass
+
+class EndianBinaryReader_Memoryview_BigEndian(EndianBinaryReader_Memoryview):
+    pass
 
 class EndianBinaryReader_Streamable(EndianBinaryReader):
     __slots__ = ("stream", "_endian", "BaseOffset")
-    stream: io.BufferedReader
+    stream: BufferedReader
 
     def __init__(self, stream, endian=">", offset=0, encrypt_func: Callable = None):
         self._endian = ""
@@ -312,6 +233,13 @@ class EndianBinaryReader_Streamable(EndianBinaryReader):
         if value not in ("<", ">"):
             raise ValueError(f"Invalid endianness: {value}")
         if value != self._endian:
+            setattr(
+                self,
+                "__class__",
+                EndianBinaryReader_Streamable_LittleEndian
+                if value == "<"
+                else EndianBinaryReader_Streamable_BigEndian,
+            )
             self._endian = value
 
     @property
@@ -346,3 +274,58 @@ class EndianBinaryReader_Streamable(EndianBinaryReader):
             return self.Encryption(ret, pos)
         return ret
 
+class EndianBinaryReader_Streamable_LittleEndian(EndianBinaryReader_Streamable):
+    pass
+
+class EndianBinaryReader_Streamable_BigEndian(EndianBinaryReader_Streamable):
+    pass
+
+def generate_streamable_read_method(endian, type_id, native_type):
+    format = f"{endian}{type_id}"
+    size = calcsize(format)
+    if native_type is not None:
+        def _method_body(self):
+            return native_type(*Struct(format).unpack(self.read(size)))
+    else:
+        def _method_body(self):
+            return Struct(format).unpack(self.read(size))[0]
+    return _method_body
+
+def generate_memoryview_read_method(endian, type_id, native_type):
+    format = f"{endian}{type_id}"
+    size = calcsize(format)
+    if native_type is not None:
+        def _method_body(self):
+            ret = Struct(format).unpack_from(self.view, self.Position)
+            self.Position += size
+            return native_type(*ret)
+    else:
+        def _method_body(self):
+            ret = Struct(format).unpack_from(self.view, self.Position)
+            self.Position += size
+            return ret[0]
+    return _method_body
+
+def generate_array_read_method(type_name):
+    reader_method = f"read_{type_name}"
+    def _method_body(self, length=None):
+        if not length:
+            length = self.read_int()
+        return self.read_array(getattr(self, reader_method), length)
+    return _method_body
+
+# generate methods for reading each type
+for endian_s, endian_l in (("<", "little"), (">", "big")):
+    for type_name, type_id, size, native_type in TYPE_PARAM_SIZE_LIST:
+        if type_name != "byte":
+            setattr(EndianBinaryReader, f"read_{type_name}_array", generate_array_read_method(type_name))
+        if endian_l == "big":
+            clsm = EndianBinaryReader_Memoryview_BigEndian
+            clss = EndianBinaryReader_Streamable_BigEndian
+        else:
+            clsm = EndianBinaryReader_Memoryview_LittleEndian
+            clss = EndianBinaryReader_Streamable_LittleEndian
+        setattr(clsm, f"read_{type_name}", generate_memoryview_read_method(endian_s, type_id, native_type))
+        setattr(clss, f"read_{type_name}", generate_streamable_read_method(endian_s, type_id, native_type))
+
+pass

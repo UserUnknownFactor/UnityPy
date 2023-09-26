@@ -55,7 +55,6 @@ def check_file_type(input_) -> Union[FileType, EndianBinaryReader]:
     if reader.Length < 20:
         return FileType.ResourceFile, reader
 
-    
     signature = reader.read_string_to_null(20)
     if DEBUG:
         print(signature)

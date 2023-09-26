@@ -1,6 +1,7 @@
 ﻿from . import File
 from ..helpers import CompressionHelper
-from ..streams import EndianBinaryReader, EndianBinaryWriter, SYS_ENDIAN
+from ..streams import EndianBinaryReader, EndianBinaryWriter
+from ..streams.EndianBinaryReader import SYS_ENDIAN
 
 
 class WebFile(File.File):

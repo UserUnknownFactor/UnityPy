@@ -157,14 +157,14 @@ class Environment:
 
     def save(self, pack: str = "none", writer_generator: Callable = None, out_path=None):
         """Saves all changed assets.
-        Mark assets as changed using `.mark_changed()`.
+        Mark an asset as changed using `.mark_changed()` if it isn't auto-marked.
         pack = "none" (default) or "lz4"
         """
         for f in self.files:
             opath = self.out_path
             if out_path:
                 opath = out_path
-            if hasattr(self.files[f], "is_changed") and self.files[f].is_changed:
+            if getattr(self.files[f], "is_changed", False):
                 fn = os.path.join(opath, os.path.basename(f))
                 with open(fn, "wb") as out:
                     out.write(self.files[f].save(packer=pack, writer=writer_generator(fn) if writer_generator else None))
