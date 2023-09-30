@@ -4,8 +4,8 @@ from ctypes import c_uint32
 import tabulate
 from ..exceptions import TypeTreeError as TypeTreeError
 
-
 kAlignBytes = 0x4000
+
 
 class TypeTreeNode(object):
     __slots__ = (
@@ -236,7 +236,6 @@ def read_value(nodes: List[TypeTreeNode], reader: EndianBinaryReader, i: c_uint3
 
     if align:
         reader.align_stream()
-    if False: print(f"Reading {typ} = {value}")
     return value
 
 

@@ -100,7 +100,7 @@ class ArchiveStorageDecryptor:
             data[0x10 + i * 4 + j] for j in range(4) for i in range(4)
         )
 
-    def decrypt_block(self, data: bytes, index: int):
+    def decrypt_block(self, index: int, data: bytes):
         offset = 0
         size = len(data)
         data = bytearray(data)

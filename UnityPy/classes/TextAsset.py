@@ -29,5 +29,9 @@ class TextAsset(NamedObject):
         if writer is None:
             writer = EndianBinaryWriter(endian=self.reader.endian)
         super().save(writer)
-        writer.write_aligned_string(self.m_Script)
+
+        writer.write_int(len(self.m_Script))
+        writer.write_bytes(self.m_Script)
+        writer.align_stream()
+
         self.set_raw_data(writer.bytes)

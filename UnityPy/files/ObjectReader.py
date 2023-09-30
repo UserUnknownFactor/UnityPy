@@ -1,6 +1,6 @@
 from ..enums import ClassIDType
-from .. import classes
 from ..classes.Object import NodeHelper
+from .. import classes
 from ..streams import EndianBinaryReader, EndianBinaryWriter
 from ..helpers import TypeTreeHelper
 from ..helpers.Tpk import get_typetree_nodes
@@ -136,11 +136,7 @@ class ObjectReader:
 
     @property
     def container(self):
-        return (
-            self.assets_file._container[self.path_id]
-            if self.path_id in self.assets_file._container
-            else None
-        )
+        return self.assets_file._container.path_dict.get(self.path_id)
 
     @property
     def Position(self):
@@ -153,7 +149,7 @@ class ObjectReader:
     def reset(self):
         self.reader.Position = self.byte_start
 
-    def read(self, return_typetree_on_error: bool=False):
+    def read(self, return_typetree_on_error: bool=True):
         cls = getattr(classes, self.type.name, None)
 
         obj = None

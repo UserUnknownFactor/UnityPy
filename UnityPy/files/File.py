@@ -3,7 +3,9 @@ from ..helpers import ImportHelper
 from ..streams import EndianBinaryReader, EndianBinaryWriter
 
 from collections import namedtuple
-from os.path import basename
+from os.path import basename, isfile, join, dirname
+from os import makedirs, sep
+from re import sub
 
 DirectoryInfo = namedtuple("DirectoryInfo", "path offset size")
 
@@ -21,7 +23,7 @@ class File(object):
     # parent: File
     # environment: Environment
 
-    def __init__(self, parent=None, name: str = None, is_dependency: bool = False):
+    def __init__(self, parent=None, name: str = None, is_dependency: bool = False, **kwargs):
         self.files = {}
         self.is_changed = False
         self.cab_file = "CAB-UnityPy_Mod.resS"
@@ -31,6 +33,17 @@ class File(object):
         )
         self.name = basename(name) if isinstance(name, str) else ""
         self.is_dependency = is_dependency
+
+    @staticmethod
+    def allowed_path(path_name):
+        return sub(r'[^\w(){}[]\-_\. ]|[\*\?\!]', '_',  path_name)
+
+    @staticmethod
+    def make_path(*args):
+        fp = join(*args)
+        if sep in fp:
+            makedirs(File.allowed_path(dirname(fp)), exist_ok=True)
+        return fp
 
     def get_assets(self):
         if isinstance(self, SerializedFile.SerializedFile):
@@ -67,35 +80,43 @@ class File(object):
             elif isinstance(f, ObjectReader.ObjectReader):
                 yield f
 
-    def read_files(self, reader: EndianBinaryReader, files: list):
+    def read_files(self, reader: EndianBinaryReader, files: list, dump: bool=False):
         # read file data and convert it
-        for node in files:
-            reader.Position = node.offset
-            name = node.path
-            f = EndianBinaryReader(
-                reader.read(node.size), offset=(reader.BaseOffset + node.offset)
+        for embedded_file in files:
+            reader.Position = embedded_file.offset
+            name = embedded_file.path
+            if dump:
+                a_name = self.allowed_path(name)
+                if not isfile(a_name):
+                    self.make_path(a_name)
+                    READ_BLOCK_MAX = 314572800
+                    with open(a_name, "wb") as d:
+                        block_size = min(embedded_file.size, READ_BLOCK_MAX)
+                        i = embedded_file.size // READ_BLOCK_MAX
+                        j = 0
+                        while (i >= 0):
+                            i -= 1
+                            j += 1
+                            if embedded_file.size < block_size  *  j:
+                                #remainder since we read from the entire file
+                                block_size = embedded_file.size % READ_BLOCK_MAX
+                            if block_size == 0: break
+                            d.write(reader.read(block_size))
+                node_reader = EndianBinaryReader(a_name)
+            else:
+                node_reader = EndianBinaryReader(
+                    reader.read(embedded_file.size), 
+                    offset=(reader.BaseOffset + embedded_file.offset)
+                )
+            f = ImportHelper.parse_file(
+                node_reader, self, name, is_dependency=self.is_dependency
             )
-            # f._flag = getattr(node, "flags", None)  # required for save
-            typ, _ = ImportHelper.check_file_type(f)
-            if typ == FileType.BundleFile:
-                f = BundleFile.BundleFile(f, self, name=name)
-            elif typ == FileType.WebFile:
-                f = WebFile.WebFile(f, self, name=name)
-            elif typ == FileType.AssetsFile:
-                # pre-check if resource file
-                if not name.endswith((".resS", ".resource", ".config", ".xml", ".dat")):
-                    # try to load the file as serialized file
-                    try:
-                        f = SerializedFile.SerializedFile(f, self, name=name)
-                    except ValueError:
-                        pass
-
             if isinstance(f, (EndianBinaryReader, SerializedFile.SerializedFile)):
                 if self.environment:
                     self.environment.register_cab(name, f)
 
             # required for BundleFiles
-            f.flags = getattr(node, "flags", 0)
+            f.flags = getattr(embedded_file, "flags", 0)
             self.files[name] = f
 
     def get_writeable_cab(self, name: str = None, writer: EndianBinaryWriter = None):

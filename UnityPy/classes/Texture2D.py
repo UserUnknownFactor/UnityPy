@@ -61,9 +61,9 @@ class Texture2D(Texture):
 
     @image_data.setter
     def image_data(self, data: bytes):
-        self._image_data = data if data else None
+        self._image_data = data if data else b""
         # img.width * img.height * ( channel count = len(img.getbands()) )
-        self.m_CompleteImageSize = len(data) if data else 0
+        self.m_CompleteImageSize = len(self._image_data)
 
         # prefer writing to cab if possible, but...
         self.reset_streamdata()
@@ -110,13 +110,7 @@ class Texture2D(Texture):
         else:
             self.m_MipCount = mipmap_count
 
-
-        if in_cab:
-            self.image_data = img_data
-        else:
-            self.image_data = img_data
-            #self.reset_streamdata()
-
+        self.image_data = img_data
         self.m_TextureFormat = tex_format
 
     def __init__(self, reader):
@@ -126,10 +120,10 @@ class Texture2D(Texture):
         self.m_Width = reader.read_int()
         self.m_Height = reader.read_int()
         self.m_CompleteImageSize = reader.read_int()
-        if version >= (2020,):  # 2020.1 and up
+        if version >= (2020, 1):  # 2020.1 and up
             self.m_MipsStripped = reader.read_int()
         self.m_TextureFormat = TextureFormat(reader.read_int())
-        if version[:2] < (5, 2):  # 5.2 down
+        if version < (5, 2):  # 3.4.0 - 5.1.5f1
             self.m_MipMap = reader.read_boolean()
         else:
             self.m_MipCount = reader.read_int()
@@ -138,8 +132,11 @@ class Texture2D(Texture):
             self.m_IsReadable = reader.read_boolean()  # 2.6 and up
         if version >= (2020,):  # 2020.1 and up
             self.m_IsPreProcessed = reader.read_boolean()
-        if version >= (2019, 3):  # 2019.3 and up
+        if (2019, 3) <= version[:2] < (2022, 2):  # 2019.3.0f6 - 2022.2.0a18
             self.m_IgnoreMasterTextureLimit = reader.read_boolean()
+        if version >= (2022, 2, 0):  # 2022.2.0f1 and up
+            self.m_IgnoreMipmapLimit = reader.read_boolean()
+            self.m_MipmapLimitGroupName = reader.read_aligned_string()
         if (3,) <= version[:2] <= (5, 4):  # 3.0 - 5.4
             self.m_ReadAllowed = reader.read_boolean()
         if version >= (2018, 2):  # 2018.2 and up
@@ -184,7 +181,7 @@ class Texture2D(Texture):
         if version >= (2020,):  # 2020.1 and up
             writer.write_int(self.m_MipsStripped)
         writer.write_int(self.m_TextureFormat.value)
-        if version[:2] < (5, 2):  # 5.2 down
+        if version < (5, 2):  # 5.2 down
             writer.write_boolean(self.m_MipMap)
         else:
             writer.write_int(self.m_MipCount)
@@ -193,8 +190,11 @@ class Texture2D(Texture):
             writer.write_boolean(self.m_IsReadable)  # 2.6 and up
         if version >= (2020,):  # 2020.1 and up
             writer.write_boolean(self.m_IsPreProcessed)
-        if version >= (2019, 3):  # 2019.3 and up
+        if (2019, 3) <= version[:2] < (2022, 2):  # 2019.3.0f6 - 2022.2.0a18
             writer.write_boolean(self.m_IgnoreMasterTextureLimit)
+        if version >= (2022, 2, 0):  # 2022.2.0f1 and up
+            writer.write_boolean(self.m_IgnoreMipmapLimit)
+            writer.write_aligned_string(self.m_MipmapLimitGroupName)
         if (3,) <= version[:2] <= (5, 4):  # 3.0 - 5.4
             writer.write_boolean(self.m_ReadAllowed)  # 3.0 - 5.4
         if version >= (2018, 2):  # 2018.2 and up

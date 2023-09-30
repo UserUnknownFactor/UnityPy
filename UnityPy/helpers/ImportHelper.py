@@ -1,4 +1,5 @@
-﻿import os
+﻿from __future__ import annotations
+import os
 from typing import Union, List
 from .CompressionHelper import BROTLI_MAGIC, GZIP_MAGIC
 from ..enums import FileType
@@ -49,7 +50,7 @@ def check_file_type(input_) -> Union[FileType, EndianBinaryReader]:
     else:
         try:
             reader = EndianBinaryReader(input_)
-        except:
+        except Exception as e:
             return None, None
 
     if reader.Length < 20:
@@ -130,17 +131,35 @@ def parse_file(
     name: str,
     typ: FileType = None,
     is_dependency=False,
-):
+    dump=False
+) -> Union[files.File, EndianBinaryReader]:
     if typ is None:
         typ, _ = check_file_type(reader)
     if typ == FileType.AssetsFile and not name.endswith(
-        (".resS", ".resource", ".config", ".xml", ".dat")
+        (".resS", ".resource", ".config", ".xml", ".dat", ".info", ".json", ".py", ".dll")
     ):
         f = files.SerializedFile(reader, parent, name=name, is_dependency=is_dependency)
     elif typ == FileType.BundleFile:
-        f = files.BundleFile(reader, parent, name=name, is_dependency=is_dependency)
+        f = files.BundleFile(reader, parent, name=name, is_dependency=is_dependency, dump=dump)
     elif typ == FileType.WebFile:
         f = files.WebFile(reader, parent, name=name, is_dependency=is_dependency)
     else:
-        f = None
+        f = reader
     return f
+
+
+def find_sensitive_path(dir: str, insensitive_path: str) -> Union[str, None]:
+    parts = os.path.split(insensitive_path.strip(os.path.sep))
+
+    senstive_path = dir
+    for part in parts:
+        part_lower = part.lower()
+        part = next(
+            (name for name in os.listdir(senstive_path) if name.lower() == part_lower),
+            None,
+        )
+        if next is None:
+            return None
+        senstive_path = os.path.join(senstive_path, part)
+
+    return senstive_path

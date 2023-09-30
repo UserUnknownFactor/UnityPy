@@ -1,17 +1,13 @@
 from ..files import ObjectReader
 from ..streams import EndianBinaryWriter
-from ..helpers import ImportHelper
-from .. import files
-from ..enums import FileType, ClassIDType
-import os
-from .. import environment
+from ..enums import ClassIDType
 
 
 def save_ptr(obj, writer: EndianBinaryWriter):
     if isinstance(obj, PPtr):
         writer.write_int(obj.file_id)
     else:
-        writer.write_int(0)  # it's usually 0......
+        writer.write_int(0)  # it's usually 0...
     if obj._version < 14:
         writer.write_int(obj.path_id)
     else:
@@ -19,6 +15,8 @@ def save_ptr(obj, writer: EndianBinaryWriter):
 
 
 class PPtr:
+    autopreload = True
+
     def __init__(self, reader: ObjectReader):
         self._version = reader.version2
         self.index = -2
@@ -35,6 +33,13 @@ class PPtr:
         if item in ["index", "m_Index"]:
             return self.index
         return getattr(self, item)
+
+    def __repr__(self):
+        return "<%s %s>" % (
+            self.__class__.__name__, self._obj.__class__.__repr__(self.get_obj())
+            if self.get_obj()
+            else f"[file_id: {self.file_id}; path_id: {self.path_id}; index: {self.index}; asset: {self.assets_file.name}]"
+        )
 
     def save(self, writer: EndianBinaryWriter):
         save_ptr(self, writer)
@@ -54,25 +59,16 @@ class PPtr:
                 manager = environment.get_cab(external_name)
 
                 if not manager:
-                    # guess we have to try to find it as file then
-                    path = environment.path
-                    if path is not None:
-                        basename = os.path.basename(external_name)
-                        possible_names = [basename, basename.lower(), basename.upper()]
-                        for root, dirs, files in os.walk(path):
-                            for name in files:
-                                if name in possible_names:
-                                    manager = environment.load_file(
-                                        os.path.join(root, name)
-                                    )
-                                    environment.register_cab(name, manager)
-                                    break
-                            else:
-                                # else is reached if the previous loop didn't break
-                                continue
-                            break
-        if manager and self.path_id in manager.objects:
-            self._obj = manager.objects[self.path_id]
+                    self.assets_file.load_dependencies([external_name])
+                    manager = environment.get_cab(external_name)
+
+                if not manager and self.autopreload and environment:
+                    manager = environment.load_file(external_name)
+                    if manager:
+                        environment.register_cab(external_name, manager)
+
+        if manager is not None:
+            self._obj = manager.objects.get(self.path_id)
         else:
             self._obj = None
             if self.external_name:
@@ -83,7 +79,8 @@ class PPtr:
                     "for SerializedFiles: env.register_cab(depdency_basename, env.load_file(dependency)"
                 )
             elif self.path_id:
-                print(f"Couldn't find referenced object with path_id {self.path_id}")
+                print(f"Couldn't find referenced object with path_id {self.path_id} " +
+                      f"and name {getattr(self, 'name', '')}")
 
         return self._obj
 
@@ -102,16 +99,8 @@ class PPtr:
     def __getattr__(self, key):
         obj = self.get_obj()
         if obj is None:
-            raise AttributeError(key)
+            raise AttributeError(f"{self} has no method called \"{key}\"")
         return getattr(obj, key)
-
-    def __repr__(self):
-        return "<%s %s>" % (
-            self.__class__.__name__,
-            self._obj.__class__.__repr__(self.get_obj())
-            if self.get_obj()
-            else "Not Found",
-        )
 
     def __bool__(self):
         return True if self.get_obj() else False

@@ -5,7 +5,7 @@ from glob import glob
 from UnityPy import Environment
 from UnityPy.enums import ClassIDType
 from UnityPy.streams import EndianBinaryReader
-from UnityPy.classes import GameObject
+from UnityPy.helpers import GameObjectNode
 from tqdm import tqdm
 
 TYPES = ['TextAsset', 'MonoBehaviour', 'Texture2D', 'Shader']
@@ -36,84 +36,9 @@ def get_encryption_func(key):
 def allowed_path(path_name):
     return re.sub(r'[^\w(){}[]\-_\. ]|[\*\?\!]', '_',  path_name)
 
-class TreeNode(object):
-    "GameObject Tree structure"
-
-    SPACER =  '    '
-    BRANCH = '│   '
-    TEE =    '├── '
-    LAST =   '└── '
-
-    def __init__(self, name: str='', game_obj: GameObject=None, parent: TreeNode=None, children: list=None, attachments: list=None):
-        self.name: str = name
-        self.content: GameObject = game_obj
-        self.parent: TreeNode = parent
-        self.children: list = []
-        self.attachments: list = []
-        if children is not None:
-            for child in children:
-                self.add_child(child)
-        if attachments is not None:
-            for attachment in attachments:
-                self.add_attachment(attachment)
-
-    def __repr__(self):
-        typ = ((':' + self.content.type.name) if self.content.type != ClassIDType.GameObject else '')
-        return f"<Tree: {self.name}{typ} (children: {len(self.children)}; attachments: {len(self.attachments)})>"
-
-    def add_child(self, node):
-        if node is None:
-            return
-        assert isinstance(node, TreeNode)
-        node.parent = self
-        self.children.append(node)
-
-    def add_attachment(self, node):
-        if node is None:
-            return
-        self.attachments.append(node)
-
-    def left(self):
-        return self.children[0] if len(self.children) else None
-
-    def right(self):
-        return self.children[len(self.children)] if len(self.children) else None
-
-    def find_path_up(self):
-        path = [allowed_path(self.name)] if self.name else []
-        p = self
-        while p := p.parent:
-            path += [allowed_path(p.name)]
-        return os.sep.join(reversed(path)).strip("\\")
-
-    def find_child(self, path_id):
-        if not path_id: return None
-        if self.content.path_id == self.path_id: return self
-        for node in self.attachments:
-            if node.path_id == path_id:
-                return node
-        for node in self.children:
-            if len(node.children):
-                ret = node.find_child(path_id)
-                if ret is not None:
-                    return ret
-        return None
-
-    def print_tree(self, prefix: str=''):
-        contents = self.attachments
-        pointers = [self.TEE] * (len(contents) - 1) + ([self.LAST] if not len(self.children) else [self.TEE])
-        for pointer, node in zip(pointers, contents):
-            yield prefix + pointer + node.type.name + f" (m_fileID: {node.file_id}; m_pathID: {node.path_id})"
-        contents = self.children
-        pointers = [self.TEE] * (len(contents) - 1) + [self.LAST]
-        for pointer, node in zip(pointers, contents):
-            yield prefix + pointer + node.name
-            extension = self.BRANCH if pointer == self.TEE else self.SPACER
-            yield from node.print_tree(prefix=prefix+extension)
-
 component_dict = {}
 gobj_leafs_dict = {}
-parent_root = TreeNode()
+parent_root = GameObjectNode()
 
 def main():
     global component_dict
@@ -122,7 +47,7 @@ def main():
 
     os.makedirs(DST, exist_ok=True)
     for file_name in ASSETS:
-        parent_root = TreeNode()
+        parent_root = GameObjectNode()
         component_dict = {}
         src = os.path.realpath(os.path.join(ROOT, file_name))
         print("Parsing file:", src)
@@ -176,7 +101,7 @@ def export_obj(obj, asset: str, local_path: str) -> list:
 
     if BUILD_SCENE_TREE and objfmt == ClassIDType.GameObject:
         if data not in gobj_leafs_dict:
-            current_node = TreeNode(data.m_Name, data)
+            current_node = GameObjectNode(data.m_Name, data)
             gobj_leafs_dict[data] = current_node
         else:
             current_node = gobj_leafs_dict[data]
@@ -193,7 +118,7 @@ def export_obj(obj, asset: str, local_path: str) -> list:
                                 parent = parent_root
                                 continue
                             if parent_go not in gobj_leafs_dict:
-                                parent = TreeNode(parent_go.m_Name, parent_go)
+                                parent = GameObjectNode(parent_go.m_Name, parent_go)
                                 gobj_leafs_dict[parent_go] = parent
                             else:
                                 parent = gobj_leafs_dict[parent_go]

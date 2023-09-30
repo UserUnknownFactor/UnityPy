@@ -2,7 +2,7 @@ from enum import IntFlag
 
 
 class CompressionFlags(IntFlag):
-    NONE = 0
+    NO = 0
     LZMA = 1
     LZ4 = 2
     LZ4HC = 3
@@ -22,5 +22,6 @@ class ArchiveFlags(IntFlag):
     BlocksAndDirectoryInfoCombined = 0x40
     BlocksInfoAtTheEnd = 0x80
     OldWebPluginCompatibility = 0x100
+    UnityCNEncryption = 0x100
     BlockInfoNeedPaddingAtStart = 0x200
     UsesAssetBundleEncryption = 0x400

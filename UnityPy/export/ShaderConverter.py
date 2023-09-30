@@ -35,10 +35,10 @@ def ConvertSerializedShader(m_Shader):
 
     platformNumber = len(m_Shader.platforms)
     for i in range(platformNumber):
+        if i >= len(m_Shader.compressedLengths): break
         compressedSize = m_Shader.compressedLengths[i]
-        decompressedSize = m_Shader.decompressedLengths[i]
-
         compressedBytes = m_Shader.compressedBlob[int(m_Shader.offsets[i]):int(m_Shader.offsets[i]) + compressedSize]
+        decompressedSize = m_Shader.decompressedLengths[i]
         decompressedBytes = CompressionHelper.decompress_lz4(compressedBytes, decompressedSize)
 
         shaderPrograms.append(ShaderProgram(EndianBinaryReader(decompressedBytes, endian="<"), m_Shader.version))
@@ -146,19 +146,16 @@ def ConvertSerializedSubPrograms(m_SubPrograms, platforms, shaderPrograms):
             isTier = len(subPrograms) > 1
             for i in range(len(platforms)):
                 platform = platforms[i]
+                if i >= len(shaderPrograms): break
 
                 if CheckGpuProgramUsable(platform, programKey):
                     for subProgram in subPrograms:
                         sb.append("SubProgram \"{0} ".format(GetPlatformString(platform)))
-
                         if isTier:
                             sb.append("hw_tier{0:02} ".format(subProgram.m_ShaderHardwareTier))
-
                         sb.append("\" {\n")
                         sb.append(shaderPrograms[i].m_SubPrograms[subProgram.m_BlobIndex].Export())
-
                         sb.append("\n}\n")
-
                     break
 
     return "".join(sb)
@@ -168,12 +165,10 @@ def ConvertSerializedShaderState(m_State):
     sb = []
     if m_State.m_Name:
         sb.append(" Name \"{0}\"\n".format(m_State.m_Name))
-
     if m_State.m_LOD != 0:
         sb.append("  LOD {0}\n".format(m_State.m_LOD))
 
     sb.append(ConvertSerializedTagMap(m_State.m_Tags, 2))
-
     sb.append(ConvertSerializedShaderRTBlendState(m_State.rtBlend))
 
     if m_State.alphaToMask.val > 0:

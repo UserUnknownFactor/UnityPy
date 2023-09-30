@@ -1,7 +1,7 @@
 ﻿import os
 import re
 
-from . import File, ObjectReader
+from . import File, ObjectReader, BundleFile
 from ..enums import BuildTarget, ClassIDType, CommonString
 from ..streams import EndianBinaryReader, EndianBinaryWriter
 from ..helpers.TypeTreeHelper import TypeTreeNode
@@ -86,11 +86,11 @@ class BuildType:
         self.build_type = build_type
 
     @property
-    def isAlpha(self):
+    def IsAlpha(self):
         return self.build_type == "a"
 
     @property
-    def isPatch(self):
+    def IsPatch(self):
         return self.build_type == "p"
 
 
@@ -179,10 +179,10 @@ class SerializedFile(File.File):
     types: list
     script_types: list
     externals: list
-    _container: dict
     objects: dict
-    container_: dict
     _cache: dict
+    assetbundle: "AssetBundle"
+    container: "ContainerHelper"
     header: SerializedFileHeader
 
     @property
@@ -207,10 +207,7 @@ class SerializedFile(File.File):
         self.types = []
         self.script_types = []
         self.externals = []
-        self._container = {}
-
         self.objects = {}
-        self.container_ = {}
         # used to speed up mass asset extraction
         # some assets refer to each other, so by keeping the result
         # of specific assets cached the extraction can be speed up by a lot.
@@ -291,37 +288,37 @@ class SerializedFile(File.File):
         # read the asset_bundles to get the containers
         for obj in self.objects.values():
             if obj.type == ClassIDType.AssetBundle:
-                data = obj.read()
-                for container, asset_info in data.m_Container.items():
-                    asset = asset_info.asset
-                    self.container_[container] = asset
-                    if hasattr(asset, "path_id"):
-                        self._container[asset.path_id] = container
-        # if environment is not None:
-        #    environment.container = {**environment.container, **self.container}
+                self.assetbundle = obj.read_typetree(wrap=True)
+                self._container = ContainerHelper(self.assetbundle.m_Container)
+                break
+        else:
+            self.assetbundle = None
+            self._container = ContainerHelper({})
 
     @property
     def container(self):
-        return self.container_
+        return self._container
 
     def load_dependencies(self, possible_dependencies: list = []):
         """Load all external dependencies.
 
         Parameters
         ----------
-        possible_dependencies : list
+        possible_dependencies : list[str]
             List of possible dependencies for cases
             where the target file is not listed as external.
         """
         for file_id in self.externals:
             self.environment.load_file(file_id.path, True)
+
         for dependency in possible_dependencies:
-            try:
-                self.environment.load_file(dependency, True)
-            except FileNotFoundError:
-                pass
+            if not os.path.isfile(dependency):
+                continue
+            self.environment.load_file(dependency, True)
 
     def set_version(self, string_version):
+        #if 'XD' in string_version:
+            #string_version = string_version[0: string_version.find('XD')]
         self.unity_version = string_version
         if not string_version or string_version == "0.0.0":
             # weird case, but apparently can happen?
@@ -346,10 +343,10 @@ class SerializedFile(File.File):
                 level_stack[-1][1] -= 1
 
             type_tree_node = TypeTreeNode(
-                m_Level = level,
-                m_Type = self.reader.read_string_to_null(),
-                m_Name = self.reader.read_string_to_null(),
-                m_ByteSize = self.reader.read_int(),
+                m_Level=level,
+                m_Type=self.reader.read_string_to_null(),
+                m_Name=self.reader.read_string_to_null(),
+                m_ByteSize=self.reader.read_int(),
             )
 
             type_tree.append(type_tree_node)
@@ -438,10 +435,10 @@ class SerializedFile(File.File):
 
         return cab
 
-    def save(self, 
-            packer: str = None, 
+    def save(self,
+            packer: str = None,
             writer = None,
-            meta_writer = None, 
+            meta_writer = None,
             data_writer = None) -> bytes:
 
         # 1. header -> has to be delayed until the very end
@@ -603,7 +600,7 @@ class SerializedFile(File.File):
                     children_count += 1
             writer.write_int(children_count)
 
-    def save_type_tree5(self, nodes: list, writer: EndianBinaryWriter, str_data=b''):
+    def save_type_tree5(self, nodes: list, writer: EndianBinaryWriter, str_data=b""):
         # node count
         # stream buffer size
         # node data
@@ -647,7 +644,7 @@ class SerializedFile(File.File):
         if self.header.version >= 21:
             #writer.align_stream() # TOFIX: maybe align stream?
             writer.write_bytes(b"\0" * 4)
-            pass
+
 
 def read_string(string_buffer_reader: EndianBinaryReader, value: int) -> str:
     is_offset = (value & 0x80000000) == 0
@@ -667,7 +664,7 @@ class ContainerHelper:
         self.container = container
         # support for getitem
         self.container_dict = {key: value.asset for key, value in container}
-        self.path_dict = {value.asset.path_id: value.asset for key, value in container}
+        self.path_dict = {value.asset.path_id: key for key, value in container}
 
     def items(self):
         return ((key, value.asset) for key, value in self.container)

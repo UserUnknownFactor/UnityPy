@@ -3,7 +3,7 @@ import sys
 from struct import pack
 from typing import Callable
 from ..math import Color, Matrix4x4, Quaternion, Vector2, Vector3, Vector4, Rectangle
-from io import IOBase, BytesIO, BufferedIOBase
+from io import IOBase, BytesIO
 
 class EndianBinaryWriter:
     stream: IOBase
@@ -16,7 +16,7 @@ class EndianBinaryWriter:
         if isinstance(input_, (bytes, bytearray)):
             self.stream = BytesIO(input_)
             self.stream.seek(0, 2)
-        elif isinstance(input_, (IOBase, BufferedIOBase)):
+        elif isinstance(input_, IOBase):
             self.stream = input_
         else:
             raise ValueError("Invalid input type - %s." % type(input_))

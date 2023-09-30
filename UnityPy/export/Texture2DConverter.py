@@ -102,9 +102,17 @@ def get_image_from_texture2d(texture_2d, flip=True) -> Image.Image:
     :return: PIL.Image object
     :rtype: Image
     """
-    image_data = copy(bytes(texture_2d.image_data))
+    assert texture_2d is not None, "Must have texture_2d parameter in get_image_from_texture2d"
+
+
+    if texture_2d.m_Width == 0 or texture_2d.m_Height == 0:
+        print(f"Empty Texture2D (asset: {texture_2d.assets_file.name}; path_id: {texture_2d.path_id})")
+        return None
+
+    image_data = bytes(texture_2d.image_data)
     if not image_data:
-        raise ValueError("Texture2D has no image data")
+        print(f"Can't retrieve Texture2D (asset: {texture_2d.assets_file.name}; path_id: {texture_2d.path_id}; path: {texture_2d.m_StreamData.path})")
+        return None
 
     texture_format = (
         texture_2d.m_TextureFormat

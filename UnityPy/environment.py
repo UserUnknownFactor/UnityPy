@@ -1,21 +1,22 @@
 import io
 import os
+import re
 #import ntpath
 from typing import List, Callable, Dict, Union
 from collections import Counter
 from collections.abc import Callable
 from zipfile import ZipFile
-import re
 from . import files
 from zipfile import ZipFile
-from fsspec import AbstractFileSystem
-from fsspec.implementations.local import LocalFileSystem
+#from fsspec import AbstractFileSystem
+#from fsspec.implementations.local import LocalFileSystem
 from .files import File, ObjectReader, SerializedFile
 from .enums import FileType
 from .helpers import ImportHelper
+from .helpers.ResourceReader import search_resource_file
 from .streams import EndianBinaryReader, EndianBinaryWriter
 
-reSplit = re.compile(r"(.*?([^\/\\]+?))\.split\d+")
+RE_SPLIT = re.compile(r"(.*?([^\/\\]+?))\.split\d+")
 
 IGNORE_DIR_COUNT = 0
 DEFAULT_TYPES = ['MonoBehaviour', 'Texture2D', 'TextAsset', 'PlayerSettings']
@@ -30,14 +31,15 @@ class Environment:
     local_files: List[str]
     local_files_simple: List[str]
 
-    def __init__(self, *args, fs: AbstractFileSystem = None):
+    def __init__(self, *args, **kwargs):
         self.files = {}
         self.cabs = {}
         self.path = None
-        self.out_path = os.path.join(os.getcwd(), "output")
+        self._cwd = os.getcwd()
+        self.out_path = os.path.join(self._cwd, "output")
         self.ignore_dir_lvls = IGNORE_DIR_COUNT
         self.progress_function = default_progress
-        self.fs = fs or LocalFileSystem()
+        #self.fs = kwargs.get("fs", None) or LocalFileSystem()
         self.local_files = []
         self.local_files_simple = []
 
@@ -49,7 +51,7 @@ class Environment:
                             self.load_zip_file(arg)
                         else:
                             self.path = os.path.dirname(arg)
-                            if reSplit.match(arg):
+                            if RE_SPLIT.match(arg):
                                 self.load_files([arg])
                             else:
                                 self.load_file(arg)
@@ -75,7 +77,7 @@ class Environment:
         self.load_files(
             [
                 os.path.join(root, f)
-                for root, dirs, files in os.walk(path)
+                for root, _, files in os.walk(path)
                 for f in files
             ]
         )
@@ -96,12 +98,16 @@ class Environment:
         parent: Union["Environment", File] = None,
         name: str = None,
         is_dependency: bool = False,
+        dump: bool = False
     ):
+        if not file:
+            return None
+
         if not parent:
             parent = self
 
         if isinstance(file, str):
-            split_match = reSplit.match(file)
+            split_match = RE_SPLIT.match(file)
             if split_match:
                 basepath, basename = split_match.groups()
                 file = []
@@ -116,29 +122,33 @@ class Environment:
                 file = b"".join(file)
             else:
                 name = file
-                file = open(file, "rb")
+                if file and not os.path.isfile(file):
+                    # should have fallback, because why do it manually...
+                    file = search_resource_file(self._cwd, file)
+                if file and os.path.isfile(file):
+                    file = open(file, "rb")
+                else:
+                    #print(name, "not found anywhere")
+                    return None
 
         typ, reader = ImportHelper.check_file_type(file)
-        stream_name = (
-            name if name else getattr(file, "name",
-                str(file.__hash__()) if hasattr(file, "__hash__") else "",
-        ))
-
+        if name:
+            stream_name = name
+        else:
+            stream_name = getattr(file, "name", None)
+            if not stream_name:
+                stream_name = str(file.__hash__()) if hasattr(file, "__hash__") else ""
         f = None
-        if typ == FileType.AssetsFile:
-            f = files.SerializedFile(reader, parent, name=stream_name)
-            self.register_cab(stream_name, f)
-        elif typ == FileType.BundleFile:
-            f = files.BundleFile(reader, parent, name=stream_name)
-        elif typ == FileType.WebFile:
-            f = files.WebFile(reader, parent, name=stream_name)
-        elif typ == FileType.ZIP:
+        if typ == FileType.ZIP:
             f = self.load_zip_file(file)
-        elif typ == FileType.ResourceFile:
-            f = EndianBinaryReader(file)
-            self.register_cab(stream_name, f)
-
+        else:
+            f = ImportHelper.parse_file(
+                    reader, self, name=stream_name, typ=typ,
+                    is_dependency=is_dependency, dump=dump
+                )
         if f:
+            if isinstance(f, (SerializedFile, EndianBinaryReader)):
+                self.register_cab(stream_name, f)
             self.files[stream_name] = f
         return f
 
@@ -157,7 +167,7 @@ class Environment:
 
     def save(self, pack: str = "none", writer_generator: Callable = None, out_path=None):
         """Saves all changed assets.
-        Mark an asset as changed using `.mark_changed()` if it isn't auto-marked.
+        Mark assets as changed using `.mark_changed()` if they aren't auto-marked.
         pack = "none" (default) or "lz4"
         """
         for f in self.files:
@@ -168,6 +178,7 @@ class Environment:
                 fn = os.path.join(opath, os.path.basename(f))
                 with open(fn, "wb") as out:
                     out.write(self.files[f].save(packer=pack, writer=writer_generator(fn) if writer_generator else None))
+                self.files[f].is_changed = False
 
     def process(self, obj_modify: Callable, types: list=DEFAULT_TYPES, **kwargs):
         """Accept modification function `obj_modify => obj_modify(obj, asset, local_path) to modify `types` """
@@ -289,6 +300,21 @@ class Environment:
         """
         self.cabs[simplify_name(name)] = item
 
+    def unregister_cab(self, name: str) -> None:
+        """
+        Removes a cab from internal listing.
+
+        Parameters
+        ----------
+        name : str
+            The name of the cab file to unregister.
+        """
+        cab = self.cabs.get(simplify_name(name), None)
+        if cab:
+            # TODO: Will this not close file handles?
+            del self.cabs[simplify_name(name)]
+
+
     def get_cab(self, name: str) -> File:
         """
         Returns the cab file with the given name.
@@ -319,9 +345,9 @@ class Environment:
         """
         split_files = []
         for path in assets:
-            splitMatch = reSplit.match(path)
+            splitMatch = RE_SPLIT.match(path)
             if splitMatch:
-                basepath, basename = splitMatch.groups()
+                basepath, _ = splitMatch.groups()
 
                 if basepath in split_files:
                     continue
@@ -338,7 +364,7 @@ class Environment:
                 data = b"".join(data)
                 path = basepath
             else:
-                data = open_f(path).read()
+                data = open_f(path)
             self.load_file(data, name=path)
 
     def find_file(self, name: str, is_dependency: bool = True) -> Union[File, None]:

@@ -1,7 +1,7 @@
-from struct import Struct, unpack, calcsize
+from struct import Struct, unpack
 from re import compile
 from typing import List, Union, Callable
-from io import BytesIO, BufferedIOBase, IOBase, BufferedReader
+from io import BytesIO, IOBase, BufferedReader, SEEK_END
 from sys import byteorder
 
 SYS_ENDIAN = "<" if byteorder == "little" else ">"
@@ -11,7 +11,7 @@ from ..math import Color, Matrix4x4, Quaternion, Vector2, Vector3, Vector4, Rect
 
 # generate unpack and unpack_from functions
 TYPE_PARAM_SIZE_LIST = [
-    # type_name, struct_type_id, type_size, native_type
+    # TYPE_NAME, STRUCT_TYPE_ID, TYPE_SIZE, NATIVE_TYPE
     ("bool", "?", 1, bool),
     ("boolean", "?", 1, bool),
     ("byte", "b", 1, None),
@@ -36,7 +36,6 @@ TYPE_PARAM_SIZE_LIST = [
 ]
 
 class EndianBinaryReader:
-    endian: str
     Length: int
     Position: int
     BaseOffset: int
@@ -45,43 +44,41 @@ class EndianBinaryReader:
     def __new__(
         cls,
         item: Union[bytes, bytearray, memoryview, BytesIO, str],
-        endian: str = ">",
-        offset: int = 0,
-        encrypt_func: Callable = None,
+        endian=">",
+        offset=0,
+        size=-1,
+        encrypt_func=None
     ):
+        in_memory = False
         if isinstance(item, (bytes, bytearray, memoryview)):
-            obj = super(EndianBinaryReader, cls).__new__(EndianBinaryReader_Memoryview)
-        elif isinstance(item, (IOBase, BufferedIOBase)):
-            obj = super(EndianBinaryReader, cls).__new__(EndianBinaryReader_Streamable)
+            in_memory = True
         elif isinstance(item, str):
             item = open(item, "rb")
-            obj = super(EndianBinaryReader, cls).__new__(EndianBinaryReader_Streamable)
-        elif isinstance(item, EndianBinaryReader):
+        elif issubclass(item.__class__, EndianBinaryReader):
             item = (
-                item.stream
-                if isinstance(item, EndianBinaryReader_Streamable)
-                else item.view
+                item.stream if isinstance(item, EndianBinaryReader_Streamable) else item.view
             )
-            return EndianBinaryReader(item, endian, offset)
+        if in_memory:
+            obj = super(EndianBinaryReader, cls).__new__(EndianBinaryReader_Memoryview)
+            setattr(obj, "view", memoryview(item))
         else:
+            #assert issubclass(item.__calss__, IOBase), "Must be IOBase for streams"
             obj = super(EndianBinaryReader, cls).__new__(EndianBinaryReader_Streamable)
-        obj.__init__(item, endian, offset, encrypt_func)
+            setattr(obj, "stream", item)
         return obj
 
-    def __init__(self, item, endian=">", offset=0, encrypt_func=None):
+    def __init__(self, item, endian:str=None, offset:int=0, size:int=0, encrypt_func:Callable=None):
         self.Encryption = encrypt_func
-        self.endian = endian
+        self._endian = ""
         self.BaseOffset = offset
         self.Position = 0
-
-    @property
-    def bytes(self):
-        # implemented by Streamable and Memoryview versions
-        raise NotImplementedError("bytes not implemented")
 
     def read(self, *args):
         # implemented by Streamable and Memoryview versions
         raise NotImplementedError("read not implemented")
+
+    def within_size(self):
+        return self.Position - self.BaseOffset < self._size
 
     def read_bytes(self, num) -> bytes:
         return self.read(num)
@@ -147,14 +144,14 @@ class EndianBinaryReader:
 
 
 class EndianBinaryReader_Memoryview(EndianBinaryReader):
-    __slots__ = ("view", "_endian", "BaseOffset", "Position", "Length")
+    __slots__ = ("view", "_endian", "BaseOffset", "Position", "Length", "Encryption")
     view: memoryview
+    endian: str
 
-    def __init__(self, view, endian=">", offset=0, encrypt_func: Callable = None):
-        self._endian = ""
-        super().__init__(view, endian=endian, offset=offset, encrypt_func=encrypt_func)
-        self.view = memoryview(view)
+    def __init__(self, view, endian=">", offset=0, size=None, encrypt_func: Callable = None):
+        super().__init__(view, endian=endian, offset=offset, size=size, encrypt_func=encrypt_func)
         self.Length = len(view)
+        self.endian = endian
 
     @property
     def endian(self):
@@ -207,13 +204,15 @@ class EndianBinaryReader_Memoryview_BigEndian(EndianBinaryReader_Memoryview):
     pass
 
 class EndianBinaryReader_Streamable(EndianBinaryReader):
-    __slots__ = ("stream", "_endian", "BaseOffset")
+    __slots__ = ("stream", "_endian", "BaseOffset", "Encryption")
     stream: BufferedReader
+    endian: str
 
-    def __init__(self, stream, endian=">", offset=0, encrypt_func: Callable = None):
-        self._endian = ""
-        self.stream = stream
-        super().__init__(stream, endian=endian, offset=offset, encrypt_func=encrypt_func)
+    def __init__(self, stream, endian=">", offset=0, size=-1, encrypt_func: Callable = None):
+        super().__init__(stream, endian=endian, offset=offset, size=size, encrypt_func=encrypt_func)
+        self.endian = endian
+        self._size = size
+        self._size_checked = False
 
     def get_position(self):
         return self.stream.tell()
@@ -244,13 +243,22 @@ class EndianBinaryReader_Streamable(EndianBinaryReader):
 
     @property
     def Length(self):
-        pos = self.Position
-        length = self.stream.seek(0, 2) - self.BaseOffset
-        self.Position = pos
-        return length
+        if self._size <= 0:
+            pos = self.Position
+            self._size = self.stream.seek(0, SEEK_END) - self.BaseOffset
+            self.Position = pos
+        elif not self._size_checked and self._size > 0:
+            pos = self.Position
+            self._size = min(self.stream.seek(0, SEEK_END) - self.BaseOffset, self._size)
+            self.Position = pos
+            self._size_checked = True
+        return self._size
 
     Position = property(get_position, set_position)
 
+
+    """ 
+    # NOTE: This is not really useful
     @property
     def bytes(self):
         last_pos = self.Position
@@ -260,6 +268,7 @@ class EndianBinaryReader_Streamable(EndianBinaryReader):
         if self.Encryption is not None:
             return self.Encryption(ret, last_pos)
         return ret
+    """
 
     def dispose(self):
         self.stream.close()
@@ -281,27 +290,27 @@ class EndianBinaryReader_Streamable_BigEndian(EndianBinaryReader_Streamable):
     pass
 
 def generate_streamable_read_method(endian, type_id, native_type):
-    format = f"{endian}{type_id}"
-    size = calcsize(format)
+    data_format = Struct(f"{endian}{type_id}")
+    size = data_format.size
     if native_type is not None:
         def _method_body(self):
-            return native_type(*Struct(format).unpack(self.read(size)))
+            return native_type(*data_format.unpack(self.read(size)))
     else:
         def _method_body(self):
-            return Struct(format).unpack(self.read(size))[0]
+            return data_format.unpack(self.read(size))[0]
     return _method_body
 
 def generate_memoryview_read_method(endian, type_id, native_type):
-    format = f"{endian}{type_id}"
-    size = calcsize(format)
+    data_format = Struct(f"{endian}{type_id}")
+    size = data_format.size
     if native_type is not None:
         def _method_body(self):
-            ret = Struct(format).unpack_from(self.view, self.Position)
+            ret = data_format.unpack_from(self.view, self.Position)
             self.Position += size
             return native_type(*ret)
     else:
         def _method_body(self):
-            ret = Struct(format).unpack_from(self.view, self.Position)
+            ret = data_format.unpack_from(self.view, self.Position)
             self.Position += size
             return ret[0]
     return _method_body
