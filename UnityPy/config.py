@@ -1,5 +1,6 @@
 # used when no version is defined by the SerializedFile or its BundleFile
 FALLBACK_UNITY_VERSION = "2.5.0f5"
+
 # determines if the typetree structures for the Object types will be parsed
 # disabling this will reduce the load time by a lot (half of the time is spend on parsing the typetrees)
 #  but it will also prevent saving an edited file
@@ -8,6 +9,9 @@ SERIALIZED_FILE_PARSE_TYPETREE = False
 # GLOBAL WARNING SUPPRESSION
 FALLBACK_VERSION_WARNED = False  # for FALLBACK_UNITY_VERSION
 
+EXTENDED_SEARCH = False # Search all cwd subdirectories for resources
+
+DEBUG = False # Toggles debugging branches
 
 # GET FUNCTIONS
 def get_fallback_version():

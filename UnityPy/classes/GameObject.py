@@ -27,9 +27,11 @@ class GameObject(EditorExtension):
 
         components_size = reader.read_int()
         self.m_Components = [None] * components_size
+        if self.version[:2] < (5, 5):
+            self._firsts = [None] * components_size
         for i in range(components_size):
             if self.version[:2] < (5, 5):
-                first = reader.read_int()
+                self._firsts[i] = reader.read_int()
             component = PPtr(reader)
             self.m_Components[i] = component
 

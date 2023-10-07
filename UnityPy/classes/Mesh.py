@@ -697,7 +697,7 @@ class Mesh(NamedObject):
                     16, 4 * 16
                 )
                 self.m_BindPose = [
-                    Matrix4x4(m_BindPoses_Unpacked[i : i + 16])
+                    Matrix4x4(*m_BindPoses_Unpacked[i : i + 16])
                     for i in range(0, m_CompressedMesh.m_BindPoses.m_NumItems, 16)
                 ]
         # Normal

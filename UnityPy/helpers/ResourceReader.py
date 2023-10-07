@@ -1,6 +1,7 @@
 import os, glob, re
 from ..streams import EndianBinaryReader
 from ..files import File
+from .. import config
 
 
 def get_resource_data(*args):
@@ -56,7 +57,7 @@ def get_resource_data(*args):
                 if reader:
                     environment.register_cab(name, reader)
                     break
-        if not reader:
+        if config.EXTENDED_SEARCH and not reader:
             for name in possible_names:
                 result = search_resource_file(res_path, name)
                 reader = environment.load_file(result, True)

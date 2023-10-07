@@ -4,12 +4,12 @@ from .Vector3 import Vector3
 class Matrix4x4:
     M: list
 
-    def __init__(self, values):
+    def __init__(self, *values):
         if len(values) != 16:
             raise ValueError(
-                "There must be sixteen and only sixteen input values for Matrix."
+                "There must be only 16 input values for Matrix4x4!"
             )
-        self.M = values
+        self.M = list(values)
 
     def __getitem__(self, index):
         if isinstance(index, tuple):
@@ -28,7 +28,7 @@ class Matrix4x4:
         print()
 
     def __mul__(lhs, rhs):
-        res = Matrix4x4([0] * 16)
+        res = Matrix4x4(*([0] * 16))
         res.M00 = (
             lhs.M00 * rhs.M00
             + lhs.M01 * rhs.M10
@@ -134,7 +134,7 @@ class Matrix4x4:
     @staticmethod
     def Scale(vector: Vector3):
         return Matrix4x4(
-            [vector.X, 0, 0, 0, 0, vector.Y, 0, 0, 0, 0, vector.Z, 0, 0, 0, 0, 1]
+            vector.X, 0, 0, 0, 0, vector.Y, 0, 0, 0, 0, vector.Z, 0, 0, 0, 0, 1
         )
 
     @property
