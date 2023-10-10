@@ -40,7 +40,7 @@ class EndianBinaryWriter:
         self.stream.seek(pos)
         return l
 
-    def dispose(self):
+    def close(self):
         self.stream.close()
         pass
 
@@ -90,6 +90,9 @@ class EndianBinaryWriter:
 
     def write_boolean(self, value: bool):
         self.write(pack(self.endian + "?", value))
+
+    def write_bool(self, value: bool):
+        self.write_boolean(value)
 
     def write_string_to_null(self, value: [str, bytes, bytearray], encoding: str="utf-8"):
         if not isinstance(value, (bytes, bytearray)):

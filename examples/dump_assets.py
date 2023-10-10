@@ -3,12 +3,13 @@ from __future__ import annotations
 import os, json, re
 from glob import glob
 from UnityPy import Environment
-from UnityPy.enums import ClassIDType
+from UnityPy.enums import ClassIDType as CID
+from UnityPy.helpers.GameObjectNode import GameObjectNode
 from UnityPy.streams import EndianBinaryReader
-from UnityPy.helpers import GameObjectNode
+from UnityPy.helpers.TypeTreeHelper import TypeTreeNode
 from tqdm import tqdm
 
-TYPES = ['TextAsset', 'MonoBehaviour', 'Texture2D', 'Shader']
+TYPES = [CID.TextAsset, CID.MonoBehaviour, CID.Texture2D, CID.Shader]
 BUILD_SCENE_TREE = True
 
 ROOT = os.path.abspath(os.getcwd()) # base directory
@@ -54,21 +55,21 @@ def main():
         am = Environment()
         if "StreamingAssets" in src:
             key = 0
-            am.load_file(EndianBinaryReader(sample, encrypt_func=get_encryption_func(key)), name=file_name)
+            asset = am.load_file(EndianBinaryReader(sample, encrypt_func=get_encryption_func(key)), name=file_name)
         else:
-            am.load_file(file_name, name=file_name)
-        if am is None:
+            asset = am.load_file(file_name, name=file_name)
+        if asset is None:
             continue
 
         am.ignore_dir_lvls = 2
-        am.progress_function = tqdm
         if BUILD_SCENE_TREE:
             am.process(export_obj, ['GameObject'])
             #with open(file_name + "_scenetree.txt", "w", encoding="utf-8") as st:
                 #for line in parent_root.print_tree():
                     #st.write(line + '\n')
-        am.process(export_obj, TYPES)
-        #am.save()
+        for item in tqdm(list(asset.get_filtered_assets(TYPES))):
+            export_obj(item, item.assets_file.name)
+
 
 def make_path(*args):
     fp = os.path.join(*args)
@@ -76,7 +77,7 @@ def make_path(*args):
     return fp
 
 
-def export_obj(obj, asset: str, local_path: str) -> list:
+def export_obj(obj, asset: str) -> list:
     global component_dict
     global gobj_leafs_dict
     global parent_root
@@ -87,19 +88,19 @@ def export_obj(obj, asset: str, local_path: str) -> list:
     name = "unnamed asset"
     fbase = os.path.basename(asset)
     try:
-        if objfmt == ClassIDType.MonoBehaviour:
+        if objfmt == CID.MonoBehaviour:
             if BUILD_SCENE_TREE:
                 name = component_dict[fbase + ',' + str(obj.path_id)].find_path_up()
-        elif (objfmt != ClassIDType.GameObject and data.name is not None and data.name != ''):
+        elif (objfmt != CID.GameObject and hasattr(data, "name") and data.name != ''):
             name = data.name
     except:
         pass
-    if objfmt != ClassIDType.MonoBehaviour and objfmt != ClassIDType.GameObject:
+    if objfmt != CID.MonoBehaviour and objfmt != CID.GameObject:
         name = re.sub(r'[^\w(){}\-_\. ]', '_',  name)
     fname, extension = os.path.splitext(name)
     objname = "%s-%s-%d" % (fname, asset, obj.path_id)
 
-    if BUILD_SCENE_TREE and objfmt == ClassIDType.GameObject:
+    if BUILD_SCENE_TREE and objfmt == CID.GameObject:
         if data not in gobj_leafs_dict:
             current_node = GameObjectNode(data.m_Name, data)
             gobj_leafs_dict[data] = current_node
@@ -109,7 +110,7 @@ def export_obj(obj, asset: str, local_path: str) -> list:
         for component in data.m_Components:
             name = component.m_Name
             if name is None: name = data.m_Name
-            if component.type in [ClassIDType.Transform, ClassIDType.RectTransform]:
+            if component.type in [CID.Transform, CID.RectTransform]:
                 if tmp := component.read():
                     if tmp.m_Father:
                         if tmp := tmp.m_Father.read():
@@ -128,15 +129,15 @@ def export_obj(obj, asset: str, local_path: str) -> list:
 
         parent.add_child(current_node)
 
-    elif objfmt == ClassIDType.TextAsset:
+    elif objfmt == CID.TextAsset:
         if data.script:
-            fp = f"{make_path(DST, fbase, local_path, os.path.split(fname)[0], objname)}.txt"
+            fp = f"{make_path(DST, 'TextAsset', os.path.split(fname)[0], objname)}.txt"
             if not os.path.isfile(fp):
                 with open(fp, "wb") as f:
                     f.write(data.script)
 
-    elif objfmt == ClassIDType.Texture2D:
-        fp = f"{make_path(DST, fbase, local_path, fname)}.png"
+    elif objfmt == CID.Texture2D:
+        fp = f"{make_path(DST, 'Texture2D', fbase, os.path.split(fname)[0], objname).strip()}.png"
         if not os.path.isfile(fp):
             try:
                 data.image.save(fp)
@@ -144,22 +145,22 @@ def export_obj(obj, asset: str, local_path: str) -> list:
                 if data.m_TextureFormat.name is not None:
                     objfmt = data.m_TextureFormat.name
                 print(repr(e), "in file:", objname, "object type:", objfmt)
-                return []
+        return [obj.path_id]
 
-    elif objfmt == ClassIDType.Sprite:
-        fp = f"{make_path(DST, fbase, local_path, fname)}.png"
+    elif objfmt == CID.Sprite:
+        fp = f"{make_path(DST, 'Sprite', fbase, fname)}.png"
         if not os.path.isfile(fp):
             data.image.save(fp)
 
-    elif objfmt == ClassIDType.PlayerSettings:
-        fp = f"{make_path(DST, fbase, local_path, objname)}.dat"
+    elif objfmt == CID.PlayerSettings:
+        fp = f"{make_path(DST, objname)}.dat"
         if not os.path.isfile(fp):
             with open(fp, "wb") as f:
                 f.write(obj.get_raw_data())
 
-    elif objfmt == "Shader":
+    elif objfmt == CID.Shader:
         extension = "txt"
-        fp = f"{make_path(DST, local_path, objname)}"
+        fp = f"{make_path(DST, 'Shader', objname)}"
         if not os.path.isfile(fp):
             with open(f"{fp}.txt", "w", encoding="utf-8") as f:
                 f.write(data.export())
@@ -167,7 +168,7 @@ def export_obj(obj, asset: str, local_path: str) -> list:
             with open(f"{fp}.dat", "wb") as f:
                 f.write(data.get_raw_data())
 
-    elif objfmt == ClassIDType.MonoBehaviour:
+    elif objfmt == CID.MonoBehaviour:
         is_raw = True
         script = None
         if obj.serialized_type.nodes:
@@ -183,14 +184,10 @@ def export_obj(obj, asset: str, local_path: str) -> list:
         else:
             script = data.m_Script.read()
             cname = script.m_ClassName
-            if "TextMeshProUGUI" not in cname and "Text" not in cname:
+            if "TextMeshProUGUI" not in cname:
                 return [obj.path_id]
             if not is_raw or not script or (
                 ASSEMBLY_TREES and cname not in ASSEMBLY_TREES):
-                # TypeTree already found
-                # or
-                # class not found in known ASSEMBLY_TREES,
-                # so we have to add the classes from some other dlls
                 pass
             elif ASSEMBLY_TREES:
                 nodes = ASSEMBLY_TREES[cname]
@@ -208,11 +205,10 @@ def export_obj(obj, asset: str, local_path: str) -> list:
             extension = "json"
             export = json.dumps(tree, indent=4, ensure_ascii=False).encode("utf-8-sig")
 
-        if script:
-            #fp = f"{make_path(DST, fbase, local_path, script.m_Namespace, script.m_ClassName, objname)}.{extension}"
-            fp = f"{make_path(DST, fbase, local_path, objname)}.{extension}"
+        if not BUILD_SCENE_TREE and script and hasattr(script, "m_Namespace") and hasattr(script, "m_ClassName"):
+            fp = f"{make_path(DST, 'MonoBehaviours', script.m_Namespace, script.m_ClassName, objname)}.{extension}"
         else:
-            fp = f"{make_path(DST, fbase, local_path, objname)}.{extension}"
+            fp = f"{make_path(DST, 'MonoBehaviours', objname)}.{extension}"
         if not is_raw and not os.path.isfile(fp):
             with open(fp, "wb") as f:
                 f.write(export)

@@ -41,7 +41,8 @@ class File(object):
     @staticmethod
     def make_path(*args):
         fp = join(*args)
-        if sep in fp:
+        if sep in fp or "/" in fp:
+            fp = fp.replace("/", sep)
             makedirs(File.allowed_path(dirname(fp)), exist_ok=True)
         return fp
 
@@ -61,7 +62,9 @@ class File(object):
             return self.get_objects()
         if isinstance(self, (BundleFile.BundleFile, WebFile.WebFile)):
             for f in self.files:
-                for obj in f.objects.values():
+                if not isinstance(self.files[f], SerializedFile.SerializedFile):
+                    continue
+                for obj in self.files[f].objects.values():
                     if obj.type in obj_types:
                         yield obj
         elif isinstance(self, SerializedFile.SerializedFile):
@@ -77,7 +80,7 @@ class File(object):
                 for obj in f.objects:
                     yield obj
             elif isinstance(f, SerializedFile.SerializedFile):
-                for obj in f.objects.values():
+                for obj in f.objects:
                     yield obj
             elif isinstance(f, ObjectReader.ObjectReader):
                 yield f

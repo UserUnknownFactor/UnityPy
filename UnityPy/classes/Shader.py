@@ -6,6 +6,7 @@ from ..enums import TextureDimension, PassType
 from ..exceptions import sanity_check
 from ..files import ObjectReader
 from ..classes import PPtr
+from ..streams import EndianBinaryWriter
 
 class Shader(NamedObject):
     def export(self):
@@ -56,6 +57,7 @@ class Shader(NamedObject):
 
             numNonModifiableTextures = reader.read_u_int()
             sanity_check("numNonModifiableTextures", numNonModifiableTextures)
+            self.m_NonModifiableTextures = {}
             for _ in range(numNonModifiableTextures):
                 key = reader.read_aligned_string()
                 self.m_NonModifiableTextures[key] = PPtr(reader)
@@ -76,6 +78,67 @@ class Shader(NamedObject):
                 SubProgramBlobSize = reader.read_int()
                 sanity_check("SubProgramBlobSize", SubProgramBlobSize, reader.Length)
                 self.m_SubProgramBlob = reader.read_bytes(SubProgramBlobSize)
+
+    def save(self, writer: EndianBinaryWriter = None):
+        if writer is None:
+            writer = EndianBinaryWriter(endian=self.reader.endian)
+        writer.version = self.reader.version
+        super().save(writer=writer)
+        version = self.version
+        if version >= (5, 5):  # 5.5 and up
+            self.m_ParsedForm.save(writer)
+            writer.write_u_int(len(self.platforms))
+            for i in range(len(self.platforms)):
+                writer.write_u_int(int(self.platforms[i]))
+
+            if version >= (2019, 3):  # 2019.3 and up
+                writer.write_u_int(len(self.offsets))
+                for i in range(len(self.compressedLengths)):
+                    writer.write_u_int_array(self.offsets[i], write_length=True)
+                writer.align_stream()
+                writer.write_u_int(len(self.compressedLengths))
+                for i in range(len(self.compressedLengths)):
+                    writer.write_u_int_array(self.compressedLengths[i], write_length=True)
+                writer.align_stream()
+                writer.write_u_int(len(self.decompressedLengths))
+                for i in range(len(self.decompressedLengths)):
+                    writer.write_u_int_array(self.decompressedLengths[i], write_length=True)
+                writer.align_stream()
+            else:
+                writer.write_u_int_array(self.offsets, write_length=True)
+                writer.write_u_int_array(self.compressedLengths, write_length=True)
+                writer.write_u_int_array(self.decompressedLengths, write_length=True)
+
+            writer.write_int(len(self.compressedBlob))
+            writer.write_bytes(self.compressedBlob)
+            writer.align_stream()
+
+            if version >= (2021,3):
+                writer.write_u_int_array(self.stageCounts, write_length=True)
+                writer.align_stream()
+
+            writer.write_u_int(len(self.m_Dependencies))
+            for item in self.m_Dependencies:
+                item.save(writer)
+            writer.align_stream()
+
+            writer.write_u_int(len(self.m_NonModifiableTextures.keys()))
+            for k, v in self.m_NonModifiableTextures.items():
+                writer.write_aligned_string(k)
+                v.save(writer)
+            writer.write_bool(self.m_ShaderIsBaked)
+            writer.align_stream()
+        else:
+            writer.write_int(len(self.m_Script))
+            writer.write_bytes(self.m_Script)
+            writer.align_stream()
+            writer.write_aligned_string(self.m_PathName)
+            if version >= (5, 3):  # 5.3 - 5.4
+                writer.write_u_int(self.decompressedSize)
+                writer.write_int(len(self.m_SubProgramBlob))
+                writer.write_bytes(self.m_SubProgramBlob)
+        self.set_raw_data(writer.bytes)
+        pass
 
     @property
     def name(self):
@@ -98,17 +161,35 @@ class StructParameter:
             MatrixParameter(reader) for _ in range(numMatrixParams)
         ]
 
+    def save(self, writer: EndianBinaryWriter):
+        writer.write_int(self.m_NameIndex)
+        writer.write_int(self.m_Index)
+        writer.write_int(self.m_ArraySize)
+        writer.write_int(self.m_StructSize)
+        writer.write_int(len(self.m_VectorMembers))
+        for item in self.m_VectorMembers:
+            item.save(writer)
+        writer.write_int(len(self.m_MatrixMembers))
+        for item in self.m_MatrixMembers:
+            item.save(writer)
 
 class SamplerParameter:
     def __init__(self, reader: ObjectReader):
         self.sampler = reader.read_u_int()
         self.bindPoint = reader.read_int()
 
+    def save(self, writer: EndianBinaryWriter):
+        writer.write_u_int(self.sampler)
+        writer.write_int(self.bindPoint)
 
 class SerializedTextureProperty:
     def __init__(self, reader: ObjectReader):
         self.m_DefaultName = reader.read_aligned_string()
         self.m_TexDim = TextureDimension(reader.read_int())
+
+    def save(self, writer: EndianBinaryWriter):
+        writer.write_aligned_string(self.m_DefaultName)
+        writer.write_int(int(self.m_TexDim))
 
 
 class SerializedProperty:
@@ -121,6 +202,15 @@ class SerializedProperty:
         self.m_DefValue = reader.read_float_array(4)
         self.m_DefTexture = SerializedTextureProperty(reader)
 
+    def save(self, writer: EndianBinaryWriter):
+        writer.write_aligned_string(self.m_Name)
+        writer.write_aligned_string(self.m_Description)
+        writer.write_string_array(self.m_Attributes)
+        writer.write_int(int(self.m_Type))
+        writer.write_u_int(self.m_Flags)
+        writer.write_float_array(self.m_DefValue)
+        self.m_DefTexture.save(writer)
+
 
 class SerializedProperties:
     def __init__(self, reader: ObjectReader):
@@ -130,12 +220,20 @@ class SerializedProperties:
             SerializedProperty(reader) for _ in range(numProps)
         ]
 
+    def save(self, writer: EndianBinaryWriter):
+        writer.write_int(len(self.m_Props))
+        for item in self.m_Props:
+            item.save(writer)
+
 
 class SerializedShaderFloatValue:
     def __init__(self, reader: ObjectReader):
         self.val = reader.read_float()
         self.name = reader.read_aligned_string()
 
+    def save(self, writer: EndianBinaryWriter):
+        writer.write_float(self.val)
+        writer.write_aligned_string(self.name)
 
 class SerializedShaderRTBlendState:
     def __init__(self, reader: ObjectReader):
@@ -147,6 +245,15 @@ class SerializedShaderRTBlendState:
         self.blendOpAlpha = SerializedShaderFloatValue(reader)
         self.colMask = SerializedShaderFloatValue(reader)
 
+    def save(self, writer: EndianBinaryWriter):
+        self.srcBlend.save(writer)
+        self.destBlend.save(writer)
+        self.srcBlendAlpha.save(writer)
+        self.destBlendAlpha.save(writer)
+        self.blendOp.save(writer)
+        self.blendOpAlpha.save(writer)
+        self.colMask.save(writer)
+
 
 class SerializedStencilOp:
     def __init__(self, reader: ObjectReader):
@@ -154,6 +261,12 @@ class SerializedStencilOp:
         self.fail = SerializedShaderFloatValue(reader)
         self.zFail = SerializedShaderFloatValue(reader)
         self.comp = SerializedShaderFloatValue(reader)
+
+    def save(self, writer: EndianBinaryWriter):
+        self.pass_.save(writer)
+        self.fail.save(writer)
+        self.zFail.save(writer)
+        self.comp.save(writer)
 
 
 class SerializedShaderVectorValue:
@@ -163,6 +276,13 @@ class SerializedShaderVectorValue:
         self.z = SerializedShaderFloatValue(reader)
         self.w = SerializedShaderFloatValue(reader)
         self.name = reader.read_aligned_string()
+
+    def save(self, writer: EndianBinaryWriter):
+        self.x.save(writer)
+        self.y.save(writer)
+        self.z.save(writer)
+        self.w.save(writer)
+        writer.write_aligned_string(self.name)
 
 
 class FogMode(IntEnum):
@@ -208,12 +328,50 @@ class SerializedShaderState:
         self.lighting = reader.read_boolean()
         reader.align_stream()
 
+    def save(self, writer: EndianBinaryWriter):
+        version = writer.version
+
+        writer.write_aligned_string(self.m_Name)
+        for item in self.rtBlend:
+            item.save(writer)
+
+        writer.write_boolean(self.rtSeparateBlend)
+        writer.align_stream()
+        if version >= (2017, 2):  # 2017.2 and up
+            self.zClip.save(writer)
+        self.zTest.save(writer)
+        self.zWrite.save(writer)
+        self.culling.save(writer)
+        if version >= (2020,):  # 2020.1 and up
+            self.conservative.save(writer)
+        self.offsetFactor.save(writer)
+        self.offsetUnits.save(writer)
+        self.alphaToMask.save(writer)
+        self.stencilOp.save(writer)
+        self.stencilOpFront.save(writer)
+        self.stencilOpBack.save(writer)
+        self.stencilReadMask.save(writer)
+        self.stencilWriteMask.save(writer)
+        self.stencilRef.save(writer)
+        self.fogStart.save(writer)
+        self.fogEnd.save(writer)
+        self.fogDensity.save(writer)
+        self.fogColor.save(writer)
+        writer.write_int(int(self.fogMode))
+        writer.write_int(self.gpuProgramID)
+        self.m_Tags.save(writer)
+        writer.write_int(self.m_LOD)
+        writer.write_boolean(self.lighting)
+        writer.align_stream()
 
 class ShaderBindChannel:
     def __init__(self, reader: ObjectReader):
         self.source = reader.read_byte()
         self.target = reader.read_byte()
 
+    def save(self, writer: EndianBinaryWriter):
+        writer.write_byte(self.source)
+        writer.write_byte(self.target)
 
 class ParserBindChannels:
     def __init__(self, reader: ObjectReader):
@@ -225,6 +383,13 @@ class ParserBindChannels:
         reader.align_stream()
         self.m_SourceMap = reader.read_u_int()
 
+    def save(self, writer: EndianBinaryWriter):
+        writer.write_int(len(self.m_Channels))
+        for item in self.m_Channels:
+            item.save(writer)
+        writer.align_stream()
+        writer.write_u_int(self.m_SourceMap)
+
 
 class VectorParameter:
     def __init__(self, reader: ObjectReader):
@@ -235,6 +400,14 @@ class VectorParameter:
         self.m_Dim = reader.read_byte()
         reader.align_stream()
 
+    def save(self, writer: EndianBinaryWriter):
+        writer.write_int(self.m_NameIndex)
+        writer.write_int(self.m_Index)
+        writer.write_int(self.m_ArraySize)
+        writer.write_byte(self.m_Type)
+        writer.write_byte(self.m_Dim)
+        writer.align_stream()
+
 
 class MatrixParameter:
     def __init__(self, reader: ObjectReader):
@@ -244,6 +417,14 @@ class MatrixParameter:
         self.m_Type = reader.read_byte()
         self.m_RowCount = reader.read_byte()
         reader.align_stream()
+
+    def save(self, writer: EndianBinaryWriter):
+        writer.write_int(self.m_NameIndex)
+        writer.write_int(self.m_Index)
+        writer.write_int(self.m_ArraySize)
+        writer.write_byte(self.m_Type)
+        writer.write_byte(self.m_RowCount)
+        writer.align_stream()
 
 
 class TextureParameter:
@@ -257,6 +438,16 @@ class TextureParameter:
         self.m_Dim = reader.read_byte()
         reader.align_stream()
 
+    def save(self, writer: EndianBinaryWriter):
+        version = writer.version
+        writer.write_int(self.m_NameIndex)
+        writer.write_int(self.m_Index)
+        writer.write_int(self.m_SamplerIndex)
+        if version >= (2017, 3):  # 2017.3 and up
+            writer.write_boolean(self.m_MultiSampled)
+        writer.write_byte(self.m_Dim)
+        writer.align_stream()
+
 
 class BufferBinding:
     def __init__(self, reader: ObjectReader):
@@ -264,6 +455,12 @@ class BufferBinding:
         self.m_Index = reader.read_int()
         if reader.version >= (2020,):  # 2020.1 and up
             self.m_ArraySize = reader.read_int()
+
+    def save(self, writer: EndianBinaryWriter):
+        writer.write_int(self.m_NameIndex)
+        writer.write_int(self.m_Index)
+        if writer.version >= (2020,):  # 2020.1 and up
+            writer.write_int(self.m_ArraySize)
 
 
 class ConstantBuffer:
@@ -296,6 +493,28 @@ class ConstantBuffer:
             self.m_IsPartialCB = reader.read_boolean()
             reader.align_stream()
 
+    def save(self, writer: EndianBinaryWriter):
+        version = writer.version
+        writer.write_int(self.m_NameIndex)
+
+        writer.write_int(len(self.m_MatrixParams))
+        for item in self.m_MatrixParams:
+            item.save(writer)
+
+        writer.write_int(len(self.m_VectorParams))
+        for item in self.m_VectorParams:
+            item.save(writer)
+
+        if version >= (2017, 3):  # 2017.3 and up
+            writer.write_int(len(self.m_StructParams))
+            for item in self.m_StructParams:
+                item.save(writer)
+
+        writer.write_int(self.m_Size)
+
+        if version >= (2020, 3, 2):
+            writer.write_boolean(self.m_IsPartialCB)
+            writer.align_stream()
 
 class UAVParameter:
     def __init__(self, reader: ObjectReader):
@@ -303,6 +522,10 @@ class UAVParameter:
         self.m_Index = reader.read_int()
         self.m_OriginalIndex = reader.read_int()
 
+    def save(self, writer: EndianBinaryWriter):
+        writer.write_int(self.m_NameIndex)
+        writer.write_int(self.m_Index)
+        writer.write_int(self.m_OriginalIndex)
 
 class SerializedProgramParameters:
     def __init__(self, reader: ObjectReader):
@@ -354,6 +577,39 @@ class SerializedProgramParameters:
             SamplerParameter(reader) for _ in range(numSamplers)
         ]
 
+    def save(self, writer: EndianBinaryWriter):
+        writer.write_int(len(self.m_VectorParams))
+        for item in self.m_VectorParams:
+            item.save(writer)
+
+        writer.write_int(len(self.m_MatrixParams))
+        for item in self.m_MatrixParams:
+            item.save(writer)
+
+        writer.write_int(len(self.m_TextureParams))
+        for item in self.m_TextureParams:
+            item.save(writer)
+
+        writer.write_int(len(self.m_BufferParams))
+        for item in self.m_BufferParams:
+            item.save(writer)
+
+        writer.write_int(len(self.m_ConstantBuffers))
+        for item in self.m_ConstantBuffers:
+            item.save(writer)
+
+        writer.write_int(len(self.m_ConstantBufferBindings))
+        for item in self.m_ConstantBufferBindings:
+            item.save(writer)
+
+        writer.write_int(len(self.m_UAVParams))
+        for item in self.m_UAVParams:
+            item.save(writer)
+
+        writer.write_int(len(self.m_Samplers))
+        for item in self.m_Samplers:
+            item.save(writer)
+        pass
 
 class SerializedSubProgram:
     def __init__(self, reader: ObjectReader):
@@ -422,6 +678,68 @@ class SerializedSubProgram:
             else:
                 self.m_ShaderRequirements = reader.read_int()
 
+    def save(self, writer: EndianBinaryWriter):
+        version = writer.version
+
+        writer.write_u_int(self.m_BlobIndex)
+        self.m_Channels.save(writer)
+
+        if (2019, 0) <= version[:2] < (2021, 2):  # 2019 ~2021.1
+            writer.write_u_short_array(self.m_GlobalKeywordIndices)
+            writer.align_stream()
+            writer.write_u_short_array(self.m_LocalKeywordIndices)
+            writer.align_stream()
+        else:
+            writer.write_u_short_array(self.m_KeywordIndices)
+            if version >= (2017,):  # 2017 and up
+                writer.align_stream()
+
+        writer.write_byte(self.m_ShaderHardwareTier)
+        writer.write_byte(int(self.m_GpuProgramType))
+        writer.align_stream()
+
+        if version >= (2021, 1, 4) or (version[0] == 2020 and version >= (2020, 3, 2)):
+            self.m_Parameters.save(writer)
+        else:
+            writer.write_int(len(self.m_VectorParams))
+            for item in self.m_VectorParams:
+                item.save(writer)
+
+            writer.write_int(len(self.m_MatrixParams))
+            for item in self.m_MatrixParams:
+                item.save(writer)
+
+            writer.write_int(len(self.m_TextureParams))
+            for item in self.m_TextureParams:
+                item.save(writer)
+
+            writer.write_int(len(self.m_BufferParams))
+            for item in self.m_BufferParams:
+                item.save(writer)
+
+            writer.write_int(len(self.m_ConstantBuffers))
+            for item in self.m_ConstantBuffers:
+                item.save(writer)
+
+            writer.write_int(len(self.m_ConstantBufferBindings))
+            for item in self.m_ConstantBufferBindings:
+                item.save(writer)
+
+            writer.write_int(len(self.m_UAVParams))
+            for item in self.m_UAVParams:
+                item.save(writer)
+
+            if version >= (2017,):  # 2017 and up
+                writer.write_int(len(self.m_Samples))
+                for item in self.m_Samples:
+                    item.save(writer)
+
+        if version >= (2017, 2):  # 2017.2 and up
+            if version >= (2021,):
+                writer.write_long(self.m_ShaderRequirements)
+            else:
+                writer.write_int(self.m_ShaderRequirements)
+
 class SerializedPlayerSubProgram:
     def __init__(self, reader: ObjectReader):
         self.m_BlobIndex = reader.read_u_int()
@@ -430,6 +748,14 @@ class SerializedPlayerSubProgram:
         self.m_ShaderRequirements = reader.read_long()
         self.m_GpuProgramType = ShaderGpuProgramType(reader.read_byte())
         reader.align_stream()
+
+    def save(self, writer: EndianBinaryWriter):
+        writer.write_u_int(self.m_BlobIndex)
+        writer.write_u_short_array(self.m_KeywordIndices)
+        writer.align_stream()
+        writer.write_long(self.m_ShaderRequirements)
+        writer.write_byte(int(self.m_GpuProgramType))
+        writer.align_stream()
 
 
 class SerializedProgram:
@@ -445,11 +771,10 @@ class SerializedProgram:
         if version >= (2021, 3):
             numPlayerSubPrograms = reader.read_int()
             sanity_check("numPlayerSubPrograms", numPlayerSubPrograms)
+            self.m_PlayerSubPrograms = []
             for _ in range(numPlayerSubPrograms):
-                self.m_PlayerSubPrograms = []
                 vectorSize = reader.read_int()
-                for _ in range(vectorSize):
-                    self.m_PlayerSubPrograms.append(SerializedPlayerSubProgram(reader))
+                self.m_PlayerSubPrograms.append([SerializedPlayerSubProgram(reader) for _ in range(vectorSize)])
 
             numParameterBlobIndices = reader.read_int()
             sanity_check("numParameterBlobIndices", numParameterBlobIndices)
@@ -462,6 +787,32 @@ class SerializedProgram:
 
         if version >= (2022, 0): # TODO: not precise
             self.m_SerializedKeywordStateMask = reader.read_u_short_array()
+
+    def save(self, writer: EndianBinaryWriter):
+        version = writer.version
+
+        writer.write_int(len(self.m_SubPrograms))
+        for arr in self.m_SubPrograms:
+            writer.write_int(len(arr))
+            for item in arr:
+                item.save(writer)
+
+        if version >= (2021, 3):
+            writer.write_int(len(self.m_PlayerSubPrograms))
+            for arr in self.m_PlayerSubPrograms:
+                writer.write_int(len(arr))
+                for item in arr:
+                    item.save(writer)
+
+            writer.write_int(len(self.m_ParameterBlobIndices))
+            for item in self.m_ParameterBlobIndices:
+                writer.write_u_int_array(item, write_length=True)
+
+        if version >= (2020, 3, 2):
+            self.m_CommonParameters.save(writer)
+
+        if version >= (2022, 0): # TODO: version is not precise
+            writer.write_u_short_array(self.m_SerializedKeywordStateMask)
 
 
 class SerializedPass:
@@ -513,6 +864,51 @@ class SerializedPass:
             reader.align_stream()
         pass
 
+    def save(self, writer: EndianBinaryWriter):
+        version = writer.version
+
+        if version >= (2020, 2):  # 2020.2 and up
+            writer.write_int(len(self.m_EditorDataHash))
+            for item in self.m_EditorDataHash:
+                writer.write_bytes(item)  # Hash128(writer)
+
+            writer.align_stream()
+            writer.write_byte_array(self.m_Platforms)
+            writer.align_stream()
+            if version[:2] < (2021, 2):
+                writer.write_u_short_array(self.m_LocalKeywordMask)
+                writer.align_stream()
+                writer.write_u_short_array(self.m_GlobalKeywordMask)
+                writer.align_stream()
+
+        numNameIndices = len(self.m_NameIndices.keys())
+        writer.write_int(numNameIndices)
+        for k, v in self.m_NameIndices.items():
+            writer.write_aligned_string(k)
+            writer.write_int(v)
+        writer.write_int(int(self.m_Type))
+        self.m_State.save(writer)
+        writer.write_u_int(self.m_ProgramMask)
+        self.progVertex.save(writer)
+        self.progFragment.save(writer)
+        self.progGeometry.save(writer)
+        self.progHull.save(writer)
+        self.progDomain.save(writer)
+        if version >= (2019, 3):  # 2019.3 and up
+            self.progRayTracing.save(writer)
+        writer.write_boolean(self.m_HasInstancingVariant)
+        if version >= (2018,):  # 2018 and up
+            writer.write_boolean(self.m_HasProceduralInstancingVariant)
+        writer.align_stream()
+        writer.write_aligned_string(self.m_UseName)
+        writer.write_aligned_string(self.m_Name)
+        writer.write_aligned_string(self.m_TextureName)
+        self.m_Tags.save(writer)
+        if version[:2] >= (2021, 2):
+            writer.write_u_short_array(self.m_SerializedKeywordStateMask)
+            writer.align_stream()
+        pass
+
 
 class SerializedTagMap:
     def __init__(self, reader: ObjectReader):
@@ -523,6 +919,12 @@ class SerializedTagMap:
             key = reader.read_aligned_string()
             self.tags[key] = reader.read_aligned_string()
 
+    def save(self, writer: EndianBinaryWriter):
+        numTags = len(self.tags.keys())
+        writer.write_int(numTags)
+        for k, v in self.tags.items():
+            writer.write_aligned_string(k)
+            writer.write_aligned_string(v)
 
 class SerializedSubShader:
     def __init__(self, reader: ObjectReader):
@@ -533,17 +935,32 @@ class SerializedSubShader:
         self.m_Tags = SerializedTagMap(reader)
         self.m_LOD = reader.read_int()
 
+    def save(self, writer: EndianBinaryWriter):
+        writer.write_int(len(self.m_Passes))
+        for item in self.m_Passes:
+            item.save(writer)
+        self.m_Tags.save(writer)
+        writer.write_int(self.m_LOD)
+
 
 class SerializedShaderDependency:
     def __init__(self, reader: ObjectReader):
         self.d_from = reader.read_aligned_string()
         self.d_to = reader.read_aligned_string()
 
+    def save(self, writer: EndianBinaryWriter):
+        writer.write_aligned_string(self.d_from)
+        writer.write_aligned_string(self.d_to)
+
 
 class SerializedCustomEditorForRenderPipeline:
     def __init__(self, reader: ObjectReader):
         self.customEditorName = reader.read_aligned_string()
         self.renderPipelineType = reader.read_aligned_string()
+
+    def save(self, writer: EndianBinaryWriter):
+        writer.write_aligned_string(self.customEditorName)
+        writer.write_aligned_string(self.renderPipelineType)
 
 
 class SerializedShader:
@@ -558,7 +975,9 @@ class SerializedShader:
 
         if version[:2] >= (2021, 2):
             self.m_KeywordNames = reader.read_string_array()
-            self.m_KeywordFlags = reader.read_bytes(reader.read_int())
+            numKeywordFlags = reader.read_int()
+            sanity_check("numKeywordFlags", numKeywordFlags)
+            self.m_KeywordFlags = reader.read_bytes(numKeywordFlags)
             reader.align_stream()
 
         self.m_Name = reader.read_aligned_string()
@@ -572,11 +991,43 @@ class SerializedShader:
 
         if version[0] >= 2021:
             self.m_CustomEditorForRenderPipelines = []
-            m_CustomEditorForRenderPipelinesSize = reader.read_int()
-            for _ in range(m_CustomEditorForRenderPipelinesSize):
+            numCustomEditorForRenderPipelinesSize = reader.read_int()
+            sanity_check("numCustomEditorForRenderPipelinesSize", numCustomEditorForRenderPipelinesSize)
+            for _ in range(numCustomEditorForRenderPipelinesSize):
                 self.m_CustomEditorForRenderPipelines.append(
                     SerializedCustomEditorForRenderPipeline(reader)
                 )
 
         self.m_DisableNoSubshadersMessage = reader.read_boolean()
         reader.align_stream()
+
+    def save(self, writer: EndianBinaryWriter):
+        version = writer.version
+
+        self.m_PropInfo.save(writer)
+
+        writer.write_int(len(self.m_SubShaders))
+        for item in self.m_SubShaders:
+            item.save(writer)
+
+        if version[:2] >= (2021, 2):
+            writer.write_string_array(self.m_KeywordNames)
+            writer.write_int(len(self.m_KeywordFlags))
+            writer.write_bytes(self.m_KeywordFlags)
+            writer.align_stream()
+
+        writer.write_aligned_string(self.m_Name)
+        writer.write_aligned_string(self.m_CustomEditorName)
+        writer.write_aligned_string(self.m_FallbackName)
+
+        writer.write_int(len(self.m_Dependencies))
+        for item in self.m_Dependencies:
+            item.save(writer)
+
+        if version[0] >= 2021:
+            writer.write_int(len(self.m_CustomEditorForRenderPipelines))
+            for item in self.m_CustomEditorForRenderPipelines:
+                item.save(writer)
+
+        writer.write_boolean(self.m_DisableNoSubshadersMessage)
+        writer.align_stream()

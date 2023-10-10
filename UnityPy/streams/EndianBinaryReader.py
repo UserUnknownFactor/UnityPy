@@ -108,7 +108,7 @@ class EndianBinaryReader:
             ret.append(c)
             c = self.read(1)
             length += 1
-            if DEBUG:
+            if False and DEBUG:
                 sanity_check("read_string_to_null length", length, max_length)
             if not c:
                 raise ValueError("Unterminated string: %r" % ret)
@@ -155,7 +155,7 @@ class EndianBinaryReader:
 
     def read_the_rest(self, reader) -> bytes:
         """Returns the rest of the provided reader's bytes."""
-        if DEBUG and self.BaseOffset + self.Position - reader.byte_start  > reader.byte_size:
+        if False and DEBUG and self.BaseOffset + self.Position - reader.byte_start  > reader.byte_size:
             raise ReadingPastObject(reader)
         return self.read_bytes(reader.byte_size - (self.BaseOffset + self.Position - reader.byte_start))
 
@@ -249,7 +249,7 @@ class EndianBinaryReader_Streamable(EndianBinaryReader):
         return self.stream.tell() - self.BaseOffset
 
     def set_position(self, value):
-        self.stream.seek(value + self.BaseOffset)
+        self.stream.seek(value + self.BaseOffset, SEEK_SET)
 
     def seek(self, value):
         self.stream.seek(value + self.BaseOffset, SEEK_SET)

@@ -37,7 +37,7 @@ class BuildSettings(Object):
     def save(self, writer: EndianBinaryWriter = None):
         if writer is None:
             writer = EndianBinaryWriter(endian=self.reader.endian)
-        super().save(writer)
+        super().save(writer, intern_call=True)
         writer.write_string_array(self.scenes)
         writer.write_string_array(self.m_preloadedPlugins)
         writer.write_string_array(self.m_enabledVRDevices)

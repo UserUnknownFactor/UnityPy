@@ -6,7 +6,7 @@ class TypeTreeError(Exception):
         self.nodes = nodes
 
 def sanity_check(value_name: str, value: int, max_value: int=32767) -> None:
-        if config.DEBUG and (value >= max_value):
+        if config.DEBUG and (value > max_value):
             raise ValueIsTooBig(f"{value_name} length", value)
 
 class ValueIsTooBig(Exception):
@@ -18,4 +18,4 @@ class ValueIsTooBig(Exception):
 class ReadingPastObject(Exception):
     def __init__(self, obj):
         super().__init__(f"read data past {obj} length")
-        self.value = value
+        self.value = obj

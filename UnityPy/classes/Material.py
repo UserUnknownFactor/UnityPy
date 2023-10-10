@@ -118,41 +118,35 @@ class UnityPropertySheet:
             reader.read_aligned_string(): UnityTexEnv(reader)
             for _ in range(reader.read_int())
         }
-
         if reader.version >= (2021,):  # 2021.1 and up
             self.m_Ints = {
                 reader.read_aligned_string(): reader.read_int()
                 for _ in range(reader.read_int())
             }
-
         self.m_Floats = {
             reader.read_aligned_string(): reader.read_float()
             for _ in range(reader.read_int())
         }
-
         self.m_Colors = {
             reader.read_aligned_string(): reader.read_color4()
             for _ in range(reader.read_int())
         }
 
     def save(self, writer: EndianBinaryWriter, version: tuple):
-        writer.write_int(len(self.m_TexEnvs))
-        for k in self.m_TexEnvs:
+        writer.write_int(len(self.m_TexEnvs.keys()))
+        for k, v in self.m_TexEnvs.items():
             writer.write_aligned_string(k)
-            self.m_TexEnvs[k].save(writer)
-
+            v.save(writer)
         if version >= (2021,):  # 2021.1 and up
-            writer.write_int(len(self.m_Ints))
-            for k in self.m_Ints:
+            writer.write_int(len(self.m_Ints.keys()))
+            for k, v in self.m_Ints.items():
                 writer.write_aligned_string(k)
-                writer.write_int(self.m_Ints[k])
-
-        writer.write_int(len(self.m_Floats))
-        for k in self.m_Floats:
+                writer.write_int(v)
+        writer.write_int(len(self.m_Floats.keys()))
+        for k, v in self.m_Floats.items():
             writer.write_aligned_string(k)
-            writer.write_float(self.m_Floats[k])
-
-        writer.write_int(len(self.m_Colors))
-        for k in self.m_Colors:
+            writer.write_float(v)
+        writer.write_int(len(self.m_Colors.keys()))
+        for k, v in self.m_Colors.items():
             writer.write_aligned_string(k)
-            writer.write_color4(self.m_Colors[k])
+            writer.write_color4(v)

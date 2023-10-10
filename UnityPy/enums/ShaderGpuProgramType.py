@@ -2,6 +2,7 @@ from enum import IntEnum
 
 
 class ShaderGpuProgramType(IntEnum):
+    """Enum of GPU program types."""
     kShaderGpuProgramUnknown = 0
     kShaderGpuProgramGLLegacy = 1
     kShaderGpuProgramGLES31AEP = 2

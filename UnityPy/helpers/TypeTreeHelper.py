@@ -310,10 +310,11 @@ def read_value(nodes: List[TypeTreeNode], reader: EndianBinaryReader, i: c_uint3
                 i.value += 2  # following by 2 entities: Size, Data(uint8[])
             case "UnityPyBinaryBlob":
                 size = None
-                try:
+                if hasattr(nodes[i.value], "m_ByteSize"):
                     size = nodes[i.value].m_ByteSize
                     value = reader.read_bytes(size)
-                except:
+                else:
+                    value = reader.read_the_rest(reader).decode('unicode-escape')
                     pass
             case _:
                 # Vector
@@ -335,9 +336,9 @@ def read_value(nodes: List[TypeTreeNode], reader: EndianBinaryReader, i: c_uint3
                             value = read_typetree(all_trees[_type], reader, all_trees, c_uint32(6))
                             return value
                         else:
-                            m_name_err = nodes[clz][0].m_Name
                             raise TypeTreeError(
-                                f"Type definition for class {m_name_err} not found",
+                                f"Type definition for class {nodes[clz][0].m_Name} " +
+                                f"of type {nodes[clz][0].m_Type} not found",
                                 nodes
                             )
                             #return {}
@@ -547,7 +548,7 @@ def write_typetree(
 
 
 def write_value(
-    value: Any, nodes: List[TypeTreeNode], writer: EndianBinaryWriter, i: c_uint32
+    value: Any | str, nodes: List[TypeTreeNode], writer: EndianBinaryWriter, i: c_uint32
 ):
     node = nodes[i.value]
     _type = node.m_Type
@@ -597,7 +598,7 @@ def write_value(
             writer.write_bytes(value)
             i.value += 2  # Size, Data(char/uint8)
         case "UnityPyBinaryBlob":
-            writer.write_bytes(value)
+            writer.write_bytes(value.encode('latin-1'))
             i.value += 1  # Data(bytes)
         case _:
             # Vector

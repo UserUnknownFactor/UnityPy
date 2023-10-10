@@ -1,8 +1,8 @@
 import os, sys, struct, json
 from glob import glob
 from UnityPy import Environment
+from UnityPy.enums import ClassIDType as CID
 from UnityPy.streams import EndianBinaryReader, EndianBinaryWriter
-from UnityPy.enums import ClassIDType
 from UnityPy.enums import TextureFormat
 from functools import partial
 from UnityPy.math import Vector2, Rectangle
@@ -59,7 +59,7 @@ def main():
         objfmt = obj.type
         data = obj.read()
         name = f"{asset_name}-{obj.path_id}."
-        if objfmt == ClassIDType.RectTransform:
+        if objfmt == CID.RectTransform:
             if obj.path_id == 1234: # or load from somewhere
                 #print(data.m_AnchoredPosition.X,data.m_AnchoredPosition.Y,"->", end='')
                 data.m_AnchoredPosition.X =  123
@@ -70,10 +70,10 @@ def main():
                 data.m_AnchorMax.X = 0.6
                 #print(data.m_AnchoredPosition.X,data.m_AnchoredPosition.Y)
                 data.save()
-        elif objfmt == ClassIDType.SpriteRenderer:
+        elif objfmt == CID.SpriteRenderer:
             data.m_DrawMode = 1
             obj.save_typetree(data) # data is of type NodeHelper here
-        if objfmt == ClassIDType.Sprite:
+        if objfmt == CID.Sprite:
             fname = next((path for path in sprites if data.name == base_name(path)), None)
             if not fname: return []
             with open(fname, "rb") as img:
@@ -97,7 +97,7 @@ def main():
             else:
                 with open(fname + ".bin", "rb") as dat:
                     obj.set_raw_data(dat.read())
-        if objfmt == ClassIDType.Texture2D:
+        if objfmt == CID.Texture2D:
             fname = next((path for path in images if data.name == base_name(path)), None)
             if not fname: return []
             with open(fname, "rb") as img:
@@ -107,17 +107,17 @@ def main():
                     return [obj.path_id]
                 data.image = _img
             data.save()
-        elif objfmt == ClassIDType.PlayerSettings:
+        elif objfmt == CID.PlayerSettings:
             data.companyName = "Company"
             data.productName = "Game"
             data.save()
-        if objfmt == ClassIDType.TextAsset:
+        if objfmt == CID.TextAsset:
             fname = next((path for path in texts if name in path), None)
             if not fname: return []
             with open(fname, "r", encoding="utf-8") as txt:
                 data.text = txt.read()
             data.save()
-        elif objfmt == ClassIDType.MonoBehaviour or objfmt == ClassIDType.Shader:
+        elif objfmt == CID.MonoBehaviour or objfmt == CID.Shader:
             fname = next((path for path in mbehavs if name in path), None)
             if not fname:
                 fname = next((path for path in jmbehavs if name in path), None)
@@ -149,7 +149,7 @@ def main():
             key = 0
             asset = am.load_file(EndianBinaryReader(f, encrypt_func=get_encryption_func(key)), name=file_name)
         else:
-            asset = am.load_file(file_name, name=file_name)
+            asset = am.load_file(file_name, name=file_name) #, dump=True)
         if asset is not None:
             print(f"Processing {file_name}...")
             for item in tqdm(list(asset.get_filtered_assets(TYPES)), desc=asset.name):

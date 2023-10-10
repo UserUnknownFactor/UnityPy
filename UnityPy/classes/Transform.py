@@ -24,8 +24,8 @@ class Transform(Component):
         writer.write_quaternion(self.m_LocalRotation)
         writer.write_vector3(self.m_LocalPosition)
         writer.write_vector3(self.m_LocalScale)
-        if reader.version >= (2021, 3): # TODO: check if lower
-            reader.align_stream()
+        if self.reader.version >= (2021, 3): # TODO: check if lower
+            writer.align_stream()
 
         writer.write_int(len(self.m_Children))
         [self.m_Children[i].save(writer) for i in range(len(self.m_Children))]
