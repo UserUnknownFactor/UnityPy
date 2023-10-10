@@ -1,8 +1,15 @@
 from struct import Struct, unpack
 from re import compile
 from typing import List, Union, Callable
-from io import BytesIO, IOBase, BufferedReader, SEEK_END
+from io import BytesIO, IOBase, SEEK_END, SEEK_SET, SEEK_CUR
 from sys import byteorder
+from ..exceptions import sanity_check, ReadingPastObject
+import weakref
+
+from .. import config
+DEBUG = config.DEBUG
+#if DEBUG:
+    #import traceback
 
 SYS_ENDIAN = "<" if byteorder == "little" else ">"
 RE_NOT_0 = compile(b"(.*?)\0")
@@ -96,15 +103,21 @@ class EndianBinaryReader:
     def read_string_to_null(self, max_length=32767) -> str:
         ret = []
         c = b""
-        while c != b"\0" and len(ret) < max_length and self.Position != self.Length:
+        length = 0
+        while c != b"\0" and len(ret) <= max_length and self.Position != self.Length:
             ret.append(c)
             c = self.read(1)
+            length += 1
+            if DEBUG:
+                sanity_check("read_string_to_null length", length, max_length)
             if not c:
                 raise ValueError("Unterminated string: %r" % ret)
         return b"".join(ret).decode("utf-8", "surrogateescape")
 
     def read_aligned_string(self) -> str:
         length = self.read_int()
+        if DEBUG:
+            sanity_check("read_aligned_string length", length, self.Length)
         if 0 < length <= self.Length - self.Position:
             string_data = bytes(self.read_bytes(length))
             result = string_data.decode("utf-8", "surrogateescape")
@@ -119,6 +132,8 @@ class EndianBinaryReader:
         return self.read(self.read_int())
 
     def read_array(self, command, length: int) -> list:
+        if not length:
+            return []
         return [command() for _ in range(length)]
 
     def read_array_struct(self, param: str, length: int = None) -> list:
@@ -140,7 +155,9 @@ class EndianBinaryReader:
 
     def read_the_rest(self, reader) -> bytes:
         """Returns the rest of the provided reader's bytes."""
-        return self.read_bytes(reader.byte_size - (self.Position - reader.byte_start))
+        if DEBUG and self.BaseOffset + self.Position - reader.byte_start  > reader.byte_size:
+            raise ReadingPastObject(reader)
+        return self.read_bytes(reader.byte_size - (self.BaseOffset + self.Position - reader.byte_start))
 
 
 class EndianBinaryReader_Memoryview(EndianBinaryReader):
@@ -177,8 +194,21 @@ class EndianBinaryReader_Memoryview(EndianBinaryReader):
             return self.Encryption(self.view, self.Position)
         return self.view
 
-    def dispose(self):
+    def close(self):
         self.view.release()
+
+    def seek(self, value):
+        if  value < self.Length:
+            self.Position = value
+        else:
+            self.Position = self.Length
+
+    def seek_relative(self, value):
+        new_position = self.Position + value
+        if  new_value < self.Length:
+            self.Position = new_position
+        else:
+            self.Position = self.Length
 
     def read(self, length: int):
         if not length:
@@ -205,7 +235,7 @@ class EndianBinaryReader_Memoryview_BigEndian(EndianBinaryReader_Memoryview):
 
 class EndianBinaryReader_Streamable(EndianBinaryReader):
     __slots__ = ("stream", "_endian", "BaseOffset", "Encryption")
-    stream: BufferedReader
+    stream: IOBase
     endian: str
 
     def __init__(self, stream, endian=">", offset=0, size=-1, encrypt_func: Callable = None):
@@ -213,15 +243,19 @@ class EndianBinaryReader_Streamable(EndianBinaryReader):
         self.endian = endian
         self._size = size
         self._size_checked = False
+        self._finalizer = weakref.finalize(self, self.close, self.stream)
 
     def get_position(self):
-        return self.stream.tell()
-
-    def seek(self, value):
-        self.stream.seek(value + self.BaseOffset)
+        return self.stream.tell() - self.BaseOffset
 
     def set_position(self, value):
         self.stream.seek(value + self.BaseOffset)
+
+    def seek(self, value):
+        self.stream.seek(value + self.BaseOffset, SEEK_SET)
+
+    def seek_relative(self, value):
+        self.stream.seek(value, SEEK_CUR)
 
     @property
     def endian(self):
@@ -256,8 +290,7 @@ class EndianBinaryReader_Streamable(EndianBinaryReader):
 
     Position = property(get_position, set_position)
 
-
-    """ 
+    """
     # NOTE: This is not really useful
     @property
     def bytes(self):
@@ -270,8 +303,12 @@ class EndianBinaryReader_Streamable(EndianBinaryReader):
         return ret
     """
 
-    def dispose(self):
-        self.stream.close()
+    def close(self, stream=None):
+        #print(f"Closing stream {stream}")
+        if stream is None:
+            self.stream.close()
+        else:
+            stream.close()
         pass
 
     def read(self, length: int):
@@ -320,6 +357,8 @@ def generate_array_read_method(type_name):
     def _method_body(self, length=None):
         if not length:
             length = self.read_int()
+        if DEBUG:
+            sanity_check(f"{type_name} array", length)
         return self.read_array(getattr(self, reader_method), length)
     return _method_body
 

@@ -1,8 +1,9 @@
 from .Object import Object
 from ..streams import EndianBinaryWriter
+from ..files import ObjectReader
 
 class UVs:
-    def __init__(self, reader):
+    def __init__(self, reader: ObjectReader):
         #self.serializedVersion = reader.read_int()
         self.x = reader.read_float()
         self.y = reader.read_float()
@@ -17,7 +18,7 @@ class UVs:
         writer.write_float(self.height)
 
 class SplashScreenLogo:
-    def __init__(self, reader):
+    def __init__(self, reader: ObjectReader):
         self.PPtr = reader.read_bytes(16)
         self.duration = reader.read_float()
 
@@ -26,7 +27,7 @@ class SplashScreenLogo:
         writer.write_float(self.duration)
 
 class AspectRatio:
-    def __init__(self, reader):
+    def __init__(self, reader: ObjectReader):
         self.PPtr = reader.read_bytes(16)
         self.duration = reader.read_float()
 
@@ -35,7 +36,7 @@ class AspectRatio:
         writer.write_float(self.duration)
 
 class PlayerSettings(Object):
-    def __init__(self, reader):
+    def __init__(self, reader: ObjectReader):
         super().__init__(reader=reader)
         version = self.version
         if version >= (5, 4):  # 5.4.0 nad up
@@ -209,7 +210,7 @@ class PlayerSettings(Object):
         self.bundleVersion =  reader.read_aligned_string()
         self.preloadedAssets = reader.read_array(lambda: reader.read_bytes(16), reader.read_int())
         reader.align_stream()
-        
+
         self.metroInputSource = reader.read_bytes(16) #reader.read_boolean()
         self.wsaTransparentSwapchain = reader.read_boolean() #reader.read_boolean()
         reader.align_stream()
@@ -233,13 +234,13 @@ class PlayerSettings(Object):
         self.androidSupportedAspectRatio = reader.read_int()
         self.androidMaxAspectRatio = reader.read_float()
         reader.align_stream()
-        
+
         self.activeInputHandler = reader.read_int()
         self.cloudProjectId = reader.read_aligned_string()
         self.framebufferDepthMemorylessMode = reader.read_int()
         self.qualitySettingsNames = reader.read_array(lambda: reader.read_bytes(16), reader.read_int())
         reader.align_stream()
-        
+
         self.projectName = reader.read_aligned_string()
         self.organizationId = reader.read_boolean()
         self.cloudEnabled = reader.read_boolean()

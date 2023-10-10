@@ -318,7 +318,7 @@ class BundleFile(File.File):
         ]
 
         file_data = data_writer.bytes
-        data_writer.dispose()
+        data_writer.close()
         uncompressed_data_size = len(file_data)
 
         # compress the data
@@ -366,7 +366,7 @@ class BundleFile(File.File):
 
         # compress the block data
         block_data = block_writer.bytes
-        block_writer.dispose()
+        block_writer.close()
 
         uncompressed_block_data_size = len(block_data)
 

@@ -7,7 +7,6 @@ from .. import config
 
 kAlignBytes = 0x4000
 
-
 class TypeTreeNode(object):
     __slots__ = (
         "m_Type",
@@ -15,10 +14,10 @@ class TypeTreeNode(object):
         "m_Level",
         "m_MetaFlag",
         # NOTE: unused parameters next
-        #"m_Version",
+        "m_ByteSize",
+        "m_Index",
+        "m_Version",
         #"m_TypeFlags",
-        #"m_ByteSize",
-        #"m_Index",
         #"m_TypeStrOffset",
         #"m_NameStrOffset",
         #"m_RefTypeHash",
@@ -28,9 +27,9 @@ class TypeTreeNode(object):
     m_Name: str
     m_Level: int
     m_MetaFlag: int
-    #m_ByteSize: int
-    #m_Index: int
-    #m_Version: int
+    m_ByteSize: int
+    m_Index: int
+    m_Version: int
     #m_TypeStrOffset: int
     #m_NameStrOffset: int
     #m_RefTypeHash: str
@@ -268,7 +267,7 @@ def read_value(nodes: List[TypeTreeNode], reader: EndianBinaryReader, i: c_uint3
     _name = node.m_Name
     align = (node.m_MetaFlag & kAlignBytes) != 0
 
-    if config.DEBUG:
+    if config.DEBUG_TYPETREES:
         pos1 = reader.Position - reader.byte_start
 
     value = read_common_type(_type, reader)
@@ -353,10 +352,14 @@ def read_value(nodes: List[TypeTreeNode], reader: EndianBinaryReader, i: c_uint3
     if align:
         reader.align_stream()
 
-    if config.DEBUG:
+    if config.DEBUG_TYPETREES:
         pos2 = reader.Position - reader.byte_start
         #debug_data[str(i.value)] =
-        print(f"\"{node.m_Name}\": {value} (offset: {pos2} - {pos1} = {pos2 - pos1})")
+        if isinstance(value, (memoryview, bytes, str)):
+            value_out = f"{value.__class__.__name__} of length {len(value)}"
+        else:
+            value_out = value
+        print(f"\"{node.m_Name}\": {value_out} (offset: {pos2} - {pos1} = {pos2 - pos1})")
 
     return value
 

@@ -1,11 +1,8 @@
+import types
 from .PPtr import PPtr
 from ..enums import BuildTarget
-from ..helpers import TypeTreeHelper
 from ..streams import EndianBinaryWriter
 from ..files import ObjectReader
-import types
-from ..exceptions import TypeTreeError as TypeTreeError
-
 
 class Object(object):
     type_tree: dict
@@ -176,7 +173,10 @@ class NodeHelper:
         return self.__dict__.keys()
 
     def save(self, *args, **kwargs):
-        raise NotImplementedError("This is a guessed structure, please create its proper parser or use the Object's save_typetree(<this NodeHelper>) method.")
+        raise NotImplementedError(
+            "This is a guessed structure, please create its proper "+
+            "parser or use the Object's save_typetree(<this NodeHelper>) method."
+        )
 
     def __repr__(self):
         name = getattr(self, "m_Name", None)

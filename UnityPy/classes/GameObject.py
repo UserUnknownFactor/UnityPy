@@ -1,5 +1,5 @@
 from .EditorExtension import EditorExtension
-from .PPtr import PPtr, save_ptr
+from .PPtr import PPtr
 from ..streams import EndianBinaryWriter
 from ..enums import ClassIDType
 
@@ -74,7 +74,7 @@ class GameObject(EditorExtension):
         for i in range(component_size):
             if self.version[:2] < (5, 5):
                 writer.write_int(self._firsts[i])
-            save_ptr(self.m_Components[i], writer)
+            self.m_Components[i].save(writer)
         writer.write_int(self.m_Layer)
         writer.write_aligned_string(self.m_Name)
         if self.version > (2019, ):

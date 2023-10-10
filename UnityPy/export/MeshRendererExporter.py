@@ -1,11 +1,10 @@
 import os
-from ..classes import Renderer, SkinnedMeshRenderer, Material, Texture2D
-from ..enums import ClassIDType
+from ..classes import SkinnedMeshRenderer, Renderer, Material
 from .MeshExporter import export_mesh_obj
 
 
 def get_mesh(meshR: Renderer):
-    if isinstance(meshR, SkinnedMeshRenderer.SkinnedMeshRenderer):
+    if isinstance(meshR, SkinnedMeshRenderer):
         if meshR.m_Mesh:
             return meshR.m_Mesh.read()
     else:

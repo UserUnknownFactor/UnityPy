@@ -126,11 +126,14 @@ def main():
                 script = data.m_Script.read()
                 nodes = ASSEMBLY_TREES[script.m_ClassName]
                 with open(fname, "r", encoding="utf-8-sig") as dat:
+                    sjson = None
                     try:
-                        jtranslated = json.load(dat)
-                        obj.save_typetree(jtranslated, nodes)
+                        sjson = json.load(dat)
                     except Exception as e:
-                        raise Exception(f"Error {e} in {fname}:\n{e.message}")
+                        print("---- ERROR READING JSON ----\n\n{e} from {fname}")
+                    if not sjson:
+                        os.exit(2)
+                    obj.save_typetree(sjson, nodes)
             else:
                 with open(fname, "rb") as dat:
                     obj.set_raw_data(dat.read())
@@ -144,13 +147,13 @@ def main():
         is_encrypted = enc_folder in os.path.abspath(file_name)
         if is_encrypted:
             key = 0
-            am.load_file(EndianBinaryReader(f, encrypt_func=get_encryption_func(key)), name=file_name)
+            asset = am.load_file(EndianBinaryReader(f, encrypt_func=get_encryption_func(key)), name=file_name)
         else:
-            am.load_file(file_name, name=file_name)
-        if am is not None:
+            asset = am.load_file(file_name, name=file_name)
+        if asset is not None:
             print(f"Processing {file_name}...")
-            am.progress_function = tqdm
-            am.process(partial(obj_modify, files=mbehavs), TYPES)
+            for item in tqdm(list(asset.get_filtered_assets(TYPES)), desc=asset.name):
+                obj_modify(item, item.assets_file.name)
             gen = get_writer_func(key) if is_encrypted else None
             opath = os.path.join(am.out_path, enc_folder) if is_encrypted else None
             am.save(pack="none", writer_generator=gen, out_path=opath)

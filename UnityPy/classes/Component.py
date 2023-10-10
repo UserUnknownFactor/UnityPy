@@ -1,5 +1,5 @@
 from .EditorExtension import EditorExtension
-from .PPtr import PPtr, save_ptr
+from .PPtr import PPtr
 from ..streams import EndianBinaryReader, EndianBinaryWriter
 
 
@@ -8,9 +8,8 @@ class Component(EditorExtension):
         super().__init__(reader=reader)
         self.m_GameObject = PPtr(reader)  # GameObject
 
-    def save(self, writer: EndianBinaryWriter = None):
+    def save(self, writer: EndianBinaryWriter):
         if writer is None:
             writer = EndianBinaryWriter(endian=self.reader.endian)
-        version = self.version
         super().save(writer)
-        save_ptr(self.m_GameObject, writer)
+        self.m_GameObject.save(writer)

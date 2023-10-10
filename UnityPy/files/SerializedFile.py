@@ -1,13 +1,11 @@
 ﻿import os
 import re
+from struct import Struct
 
 from . import File, ObjectReader, BundleFile
 from ..enums import BuildTarget, ClassIDType, CommonString
 from ..streams import EndianBinaryReader, EndianBinaryWriter
 from ..helpers.TypeTreeHelper import TypeTreeNode
-
-from struct import Struct
-
 from .. import config
 
 

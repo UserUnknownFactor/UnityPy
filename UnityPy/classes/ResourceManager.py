@@ -1,6 +1,7 @@
 from .Object import Object
-from .PPtr import PPtr, save_ptr
+from .PPtr import PPtr
 from ..streams import EndianBinaryReader, EndianBinaryWriter
+from .. import config
 
 
 class ResourceManager(Object):
@@ -19,5 +20,7 @@ class ResourceManager(Object):
         writer.write_int(len(self.m_Container))
         for key, val in self.m_Container.items():
             writer.write_aligned_string(key)
-            save_ptr(val, writer)
+            if config.DEBUG:
+                assert isinstance(val, PPtr), "{val} must be an instance of PPtr class"
+            val.save(writer)
         return writer

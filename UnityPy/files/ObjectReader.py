@@ -5,6 +5,9 @@ from ..streams import EndianBinaryReader, EndianBinaryWriter
 from ..helpers import TypeTreeHelper
 from ..helpers.Tpk import get_typetree_nodes
 from ..exceptions import TypeTreeError
+from ..files import SerializedFile#, BundleFile, WebFile
+#from typing import Union
+from .. import config
 
 
 class ObjectReader:
@@ -14,6 +17,7 @@ class ObjectReader:
     class_id: int
     type: ClassIDType
     path_id: int
+    reader: EndianBinaryReader
     # serialized_type: SerializedType
     _last_read_pos: int
 
@@ -21,7 +25,7 @@ class ObjectReader:
     # in case that not all data is read
     # and the obj.data is changed, the unknown data can be added again
 
-    def __init__(self, assets_file, reader: EndianBinaryReader):
+    def __init__(self, assets_file: SerializedFile, reader: EndianBinaryReader):
         self.assets_file = assets_file
         self.reader = reader
         self.data = b""
@@ -158,16 +162,17 @@ class ObjectReader:
                 obj = cls(self)
             except Exception as e:
                 if return_typetree_on_error:
-                    print(f"Error during the parsing of object {self.path_id}")
+                    print(f"Error during the parsing of <{self.type.name} path_id: {self.path_id}; " +
+                          f"asset_file: {self.assets_file.name}>")
                     print(e)
-                    print("Returning the TypeTree...")
+                    print("Trying to return its TypeTree...")
                 else:
                     raise e
         if not obj:
             obj = self.read_typetree(wrap=True)
         self._last_read_pos = self.reader.Position
         end_pos = self.byte_start + self.byte_size
-        if False and self._last_read_pos < end_pos and obj and obj.type == ClassIDType.MonoBehaviour:
+        if config.DEBUG_TYPETREES and self._last_read_pos < end_pos and obj and obj.type == ClassIDType.MonoBehaviour:
             raise Exception(f"self._last_read_pos < end_pos: {self._last_read_pos} < {end_pos} (diff = {end_pos-self._last_read_pos}) in {obj}")
         return obj
 

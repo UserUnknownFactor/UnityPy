@@ -109,7 +109,7 @@ class Environment:
         if isinstance(file, str):
             split_match = RE_SPLIT.match(file)
             if split_match:
-                basepath, basename = split_match.groups()
+                basepath, _ = split_match.groups()
                 file = []
                 for i in range(0, 999):
                     item = f"{basepath}.split{i}"

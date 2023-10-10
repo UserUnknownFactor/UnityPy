@@ -1,5 +1,5 @@
 from ..files import ObjectReader
-from ..streams import EndianBinaryWriter
+from ..streams import EndianBinaryReader, EndianBinaryWriter
 from ..enums import ClassIDType
 
 
@@ -15,7 +15,7 @@ def save_ptr(obj, writer: EndianBinaryWriter):
 
 
 class PPtr:
-    autopreload = True
+    autopreload: bool = True
 
     def __init__(self, reader: ObjectReader):
         self._version = reader.version2
@@ -36,8 +36,8 @@ class PPtr:
 
     def __repr__(self):
         return "<%s %s>" % (
-            self.__class__.__name__, self._obj.__class__.__repr__(self.get_obj())
-            if self.get_obj()
+            self.__class__.__name__,
+            self._obj.__class__.__repr__(self.get_obj()) if self.get_obj()
             else f"[file_id: {self.file_id}; path_id: {self.path_id}; index: {self.index}; asset: {self.assets_file.name}]"
         )
 
@@ -72,15 +72,14 @@ class PPtr:
         else:
             self._obj = None
             if self.external_name:
-                print(f"Couldn't find dependency {self.external_name}")
-                print("You can try to load it manually to the environment in advance")
-                print("for Web-&BundleFiles: env.load_file(dependency)")
-                print(
-                    "for SerializedFiles: env.register_cab(depdency_basename, env.load_file(dependency)"
-                )
+                print(f"Couldn't find dependency: {self.external_name}\n" +
+                "You can try to load it manually to the environment in advance\n"
+                f"for Web-&BundleFiles: env.load_file(\"{self.external_name}\")\n" +
+                f"for SerializedFiles: env.register_cab(\"{self.external_name}\"\n"+
+                f"env.load_file(full path to \"{self.external_name}\")")
             elif self.path_id:
-                print(f"Couldn't find referenced object with path_id {self.path_id} " +
-                      f"and name {getattr(self, 'name', '')}")
+                print(f"Couldn't find referenced object with path_id: {self.path_id} " +
+                      f"and name: {getattr(self, 'name', '')}")
 
         return self._obj
 
@@ -104,3 +103,4 @@ class PPtr:
 
     def __bool__(self):
         return True if self.get_obj() else False
+

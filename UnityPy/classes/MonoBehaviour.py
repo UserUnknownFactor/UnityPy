@@ -1,5 +1,5 @@
 from .Behaviour import Behaviour
-from .PPtr import PPtr, save_ptr
+from .PPtr import PPtr
 from ..streams import EndianBinaryReader, EndianBinaryWriter
 from ..exceptions import TypeTreeError as TypeTreeError
 
@@ -24,7 +24,7 @@ class MonoBehaviour(Behaviour):
             ValueError("No raw data given")
         
         super().save(writer)
-        save_ptr(self.m_Script, writer)
+        self.m_Script.save(writer)
         writer.write_aligned_string(self.name)
         writer.write(raw_data)
         

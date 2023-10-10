@@ -15,7 +15,7 @@ from .GameObject import GameObject
 from .Material import Material
 from .Mesh import Mesh
 from .MeshFilter import MeshFilter
-from .MeshRenderer import MeshRenderer
+#from .MeshRenderer import MeshRenderer
 from .MonoBehaviour import MonoBehaviour
 from .MonoScript import MonoScript
 from .MovieTexture import MovieTexture

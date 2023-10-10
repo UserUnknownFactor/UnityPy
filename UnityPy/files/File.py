@@ -56,18 +56,20 @@ class File(object):
             elif isinstance(f, SerializedFile.SerializedFile):
                 yield f
 
-    def get_filtered_objects(self, obj_types=[]):
+    def get_filtered_assets(self, obj_types=[]):
         if len(obj_types) == 0:
             return self.get_objects()
-        for f in self.files.values():
-            if isinstance(f, (BundleFile.BundleFile, WebFile.WebFile)):
-                for obj in f.objects:
-                    if obj.type in obj_types:
-                        yield obj
-            elif isinstance(f, SerializedFile.SerializedFile):
+        if isinstance(self, (BundleFile.BundleFile, WebFile.WebFile)):
+            for f in self.files:
                 for obj in f.objects.values():
                     if obj.type in obj_types:
                         yield obj
+        elif isinstance(self, SerializedFile.SerializedFile):
+            for obj in self.objects.values():
+                if obj.type in obj_types:
+                    yield obj
+        elif isinstance(f, ObjectReader.ObjectReader):
+            yield f
 
     def get_objects(self):
         for f in self.files.values():
@@ -105,7 +107,7 @@ class File(object):
                 node_reader = EndianBinaryReader(a_name)
             else:
                 node_reader = EndianBinaryReader(
-                    reader.read(embedded_file.size), 
+                    reader.read(embedded_file.size),
                     offset=(reader.BaseOffset + embedded_file.offset)
                 )
             f = ImportHelper.parse_file(

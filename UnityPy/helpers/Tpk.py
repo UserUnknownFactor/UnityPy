@@ -271,8 +271,6 @@ class TpkJsonBlob(TpkDataBlob):
 #   Unity
 #
 ######################################################################################
-
-
 class UnityVersion(int):
     # https://github.com/AssetRipper/VersionUtilities/blob/master/VersionUtilities/UnityVersion.cs
     """
@@ -363,6 +361,7 @@ class TpkClassInformation:
             )
             for _ in range(count)
         ]
+        pass
 
     def getVersionedClass(self, version: UnityVersion) -> TpkUnityClass:
         return get_item_for_version(version, self.Classes)
@@ -495,17 +494,18 @@ def read_data(stream: BytesIO) -> bytes:
 
 
 def get_item_for_version(
-    exactVersion: UnityVersion, items: List[Tuple[UnityVersion, Any]]
+    highest_version: UnityVersion, items: List[Tuple[UnityVersion, Any]]
 ) -> Any:
     ret = None
-    for version, item in items:
-        if exactVersion >= version:
+    usedver = None
+    for version, item in reversed(items):
+        if version <= highest_version:
             ret = item
-        else:
+            usedver = version
             break
     if ret:
         return ret
-    raise ValueError("Could not find exact version")
+    raise ValueError("Could not find matching version")
 
 
 init()
