@@ -11,7 +11,7 @@ class TextAsset(NamedObject):
     @property
     def script(self):
         # required for backward compatibility
-        return self.m_Script
+        return bytes(self.m_Script)
 
     @script.setter
     def script(self, value):

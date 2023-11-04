@@ -1,6 +1,6 @@
 import types
 from .PPtr import PPtr
-from ..enums import BuildTarget
+from ..enums import BuildTarget, ClassIDType
 from ..streams import EndianBinaryWriter
 from ..files import ObjectReader
 
@@ -23,7 +23,7 @@ class Object(object):
 
         self.container = (
             self.assets_file._container[self.path_id]
-            if self.path_id in self.assets_file._container
+            if self.type != ClassIDType.AssetBundle and self.path_id in self.assets_file._container
             else None
         )
 

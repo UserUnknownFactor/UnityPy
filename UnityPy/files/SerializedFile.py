@@ -7,6 +7,7 @@ from ..enums import BuildTarget, ClassIDType, CommonString
 from ..streams import EndianBinaryReader, EndianBinaryWriter
 from ..helpers.TypeTreeHelper import TypeTreeNode
 from .. import config
+from .. import classes
 
 
 class SerializedFileHeader:
@@ -286,12 +287,20 @@ class SerializedFile(File.File):
         # read the asset_bundles to get the containers
         for obj in self.objects.values():
             if obj.type == ClassIDType.AssetBundle:
-                self.assetbundle = obj.read_typetree(wrap=True)
+                try:
+                    cls = getattr(classes, obj.type.name, None)
+                    self.assetbundle = cls(obj)
+                except Exception as e:
+                    print(f"Error during the parsing of <{obj.type.name} path_id: {obj.path_id}; " +
+                        f"asset_file: {obj.assets_file.name}>")
+                    print(e)
+                    print("Trying to return its TypeTree...")
+                    self.assetbundle = obj.read_typetree(wrap=True)
                 self._container = ContainerHelper(self.assetbundle.m_Container)
                 break
         else:
             self.assetbundle = None
-            self._container = ContainerHelper({})
+            self._container = ContainerHelper([])
 
     @property
     def container(self):
@@ -659,22 +668,26 @@ class ContainerHelper:
     without breaking compatibility with old versions"""
 
     def __init__(self, container) -> None:
-        self.container = container
         # support for getitem
         self.container_dict = {key: value.asset for key, value in container}
         self.path_dict = {value.asset.path_id: key for key, value in container}
+        self.container = container
 
     def items(self):
         return ((key, value.asset) for key, value in self.container)
 
     def keys(self):
-        return list({key for key, value in self.container})
+        return list(key for key, _ in self.container)
 
     def values(self):
-        return list({value.asset for key, value in self.container})
+        return list({value.asset for _, value in self.container})
 
     def __getitem__(self, key):
-        return self.container_dict[key]
+        if isinstance(key, str):
+            return self.container_dict[key]
+        elif isinstance(key, int):
+            return self.path_dict[key]
+        return None
 
     def __setitem__(self, key, value):
         raise NotImplementedError("Assigning to container is not allowed!")
