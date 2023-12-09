@@ -128,6 +128,13 @@ class EndianBinaryReader:
     def align_stream(self, alignment=4):
         self.Position += (alignment - self.Position % alignment) % alignment
 
+    def read_color_uint(self):
+        r = self.read_u_byte()
+        g = self.read_u_byte()
+        b = self.read_u_byte()
+        a = self.read_u_byte()
+        return Color(r / 255.0, g / 255.0, b / 255.0, a / 255.0)
+
     def read_byte_array(self) -> bytes:
         return self.read(self.read_int())
 

@@ -35,4 +35,5 @@ from .TextAsset import TextAsset
 from .Texture import Texture
 from .Texture2D import Texture2D
 from .Transform import Transform
+from .UnityConnectSettings import UnityConnectSettings
 from .VideoClip import VideoClip
