@@ -73,6 +73,25 @@ def main():
         elif objfmt == CID.SpriteRenderer:
             data.m_DrawMode = 1
             obj.save_typetree(data) # data is of type NodeHelper here
+        elif objfmt == CID.Shader:
+            if "Mosaic" in data.name:
+                print(f"Modding Shader  {obj.path_id} in {asset_name}...")
+                for i, rtb in enumerate(data.m_ParsedForm.m_SubShaders[0].m_Passes[0].m_State.rtBlend):
+                    rtb.colMask.val = 0.0
+                    #rtb.blendOp.val = D3D_BLEND.D3D_BLEND_SRC_COLOR
+                    #rtb.srcBlend.val = D3D_BLEND.D3D_BLEND_SRC_ALPHA
+                    #rtb.destBlend.val = D3D_BLEND.D3D_BLEND_INV_SRC_ALPHA
+                data.save()
+                pass
+            return [obj.path_id]
+        elif objfmt == CID.Material:
+            if "Mosaic" in data.name:
+                print(f"Modding Material {obj.path_id} in {asset_name}...")
+                #data.m_SavedProperties.m_Colors["_Color"].G = 1.17549435e-38
+                #data.m_SavedProperties.m_Colors["_Color"].B = 1.17549435e-38
+                #data.m_SavedProperties.m_Colors["_Color"].A = 1e-5
+                #data.m_Shader.path_id = 0
+                #data.m_CustomRenderQueue = 0
         if objfmt == CID.Sprite:
             fname = next((path for path in sprites if data.name == base_name(path)), None)
             if not fname: return []

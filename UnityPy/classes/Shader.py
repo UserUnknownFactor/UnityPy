@@ -8,6 +8,52 @@ from ..files import ObjectReader
 from ..classes import PPtr
 from ..streams import EndianBinaryWriter
 
+class D3D_BLEND(IntEnum):
+    D3D_BLEND_ZERO = 1 # The blend factor is (0, 0, 0, 0). No pre-blend operation.
+    D3D_BLEND_ONE = 2 # The blend factor is (1, 1, 1, 1). No pre-blend operation.
+    D3D_BLEND_SRC_COLOR = 3 # The blend factor is (Rₛ, Gₛ, Bₛ, Aₛ), that is color data (RGB) from a pixel shader. No pre-blend operation.
+    D3D_BLEND_INV_SRC_COLOR = 4 # The blend factor is (1 - Rₛ, 1 - Gₛ, 1 - Bₛ, 1 - Aₛ), that is color data (RGB) from a pixel shader. The pre-blend operation inverts the data, generating 1 - RGB.
+    D3D_BLEND_SRC_ALPHA = 5 # The blend factor is (Aₛ, Aₛ, Aₛ, Aₛ), that is alpha data (A) from a pixel shader. No pre-blend operation.
+    D3D_BLEND_INV_SRC_ALPHA = 6 # The blend factor is ( 1 - Aₛ, 1 - Aₛ, 1 - Aₛ, 1 - Aₛ), that is alpha data (A) from a pixel shader. The pre-blend operation inverts the data, generating 1 - A.
+    D3D_BLEND_DEST_ALPHA = 7 # The blend factor is (Ad Ad Ad Ad), that is alpha data from a render target. No pre-blend operation.
+    D3D_BLEND_INV_DEST_ALPHA = 8 # The blend factor is (1 - Ad 1 - Ad 1 - Ad 1 - Ad), that is alpha data from a render target. The pre-blend operation inverts the data, generating 1 - A.
+    D3D_BLEND_DEST_COLOR = 9 # The blend factor is (Rd, Gd, Bd, Ad), that is color data from a render target. No pre-blend operation.
+    D3D_BLEND_INV_DEST_COLOR = 10 # The blend factor is (1 - Rd, 1 - Gd, 1 - Bd, 1 - Ad), that is color data from a render target. The pre-blend operation inverts the data, generating 1 - RGB.
+    D3D_BLEND_SRC_ALPHA_SAT = 11 # The blend factor is (f, f, f, 1); where f = min(Aₛ, 1 - Ad). The pre-blend operation clamps the data to 1 or less.
+    D3D_BLEND_BLEND_FACTOR = 14 # The blend factor is the blend factor set with OMSetBlendState. No pre-blend operation.
+    D3D_BLEND_INV_BLEND_FACTOR = 15 # The blend factor is the blend factor set with OMSetBlendState. The pre-blend operation inverts the blend factor, generating 1 - blend_factor.
+    D3D_BLEND_SRC1_COLOR = 16 # The blend factor is data sources both as color data output by a pixel shader. There is no pre-blend operation. This blend factor supports dual-source color blending.
+    D3D_BLEND_INV_SRC1_COLOR = 17 # The blend factor is data sources both as color data output by a pixel shader. The pre-blend operation inverts the data, generating 1 - RGB. This blend factor supports dual-source color blending.
+    D3D_BLEND_SRC1_ALPHA = 18 # The blend factor is data sources as alpha data output by a pixel shader. There is no pre-blend operation. This blend factor supports dual-source color blending.
+    D3D_BLEND_INV_SRC1_ALPHA = 19 # The blend factor is data sources as alpha data output by a pixel shader. The pre-blend operation inverts the data, generating 1 - A. This blend factor supports dual-source color blending.
+    D3D_BLEND_ALPHA_FACTOR = 20 # DX12 The blend factor is (A, A, A, A), where the constant, A, is taken from the blend factor set with OMSetBlendFactor.
+    D3D_BLEND_INV_ALPHA_FACTOR = 21 # DX12 The blend factor is (1 – A, 1 – A, 1 – A, 1 – A), where the constant, A, is taken from the blend factor set with OMSetBlendFactor.
+
+
+class D3D_BLEND_OP(IntEnum):
+    D3D_BLEND_OP_ADD = 1 # Add source 1 and source 2
+    D3D_BLEND_OP_SUBTRACT = 2 # Subtract source 1 from source 2
+    D3D_BLEND_OP_REV_SUBTRACT = 3 # Subtract source 2 from source 1
+    D3D_BLEND_OP_MIN = 4 # Find the minimum of source 1 and source 2
+    D3D_BLEND_OP_MAX = 5 # Find the maximum of source 1 and source 2
+
+class D3D_STENCIL_OP(IntEnum):
+    D3D_STENCIL_OP_KEEP = 1 # Keep the existing stencil data
+    D3D_STENCIL_OP_ZERO = 2 # Set the stencil data to 0
+    D3D_STENCIL_OP_REPLACE = 3 # Set the stencil data to the reference value set by calling ID3D11DeviceContext::OMSetDepthStencilState.
+    D3D_STENCIL_OP_INCR_SAT = 4 # Increment the stencil value by 1, and clamp the result
+    D3D_STENCIL_OP_DECR_SAT = 5 # Decrement the stencil value by 1, and clamp the result
+    D3D_STENCIL_OP_INVERT = 6 # Invert the stencil data
+    D3D_STENCIL_OP_INCR = 7 # Increment the stencil value by 1, and wrap the result if necessary
+    D3D_STENCIL_OP_DECR = 8 # Decrement the stencil value by 1, and wrap the result if necessary
+    
+class D3D_COLOR_WRITE_ENABLE(IntEnum):
+    D3D_COLOR_WRITE_ENABLE_RED = 1
+    D3D_COLOR_WRITE_ENABLE_GREEN = 2
+    D3D_COLOR_WRITE_ENABLE_BLUE = 4
+    D3D_COLOR_WRITE_ENABLE_ALPHA = 8
+    D3D_COLOR_WRITE_ENABLE_ALL = D3D_COLOR_WRITE_ENABLE_RED | D3D_COLOR_WRITE_ENABLE_GREEN | D3D_COLOR_WRITE_ENABLE_BLUE | D3D_COLOR_WRITE_ENABLE_ALPHA
+
 class Shader(NamedObject):
     def export(self):
         return export_shader(self)
@@ -226,24 +272,46 @@ class SerializedProperties:
             item.save(writer)
 
 
+class RTBlendType(IntEnum):
+    NOPE = 0
+    BLEND = 1
+    OP = 2
+    STENCIL = 3
+    CMASK = 4
+
+
 class SerializedShaderFloatValue:
-    def __init__(self, reader: ObjectReader):
+    def __init__(self, reader: ObjectReader, optype=RTBlendType.NOPE):
         self.val = reader.read_float()
         self.name = reader.read_aligned_string()
+        self._optype = optype
+
+    @property
+    def _desc(self):
+        if self._optype == RTBlendType.BLEND:
+            return D3D_BLEND(int(self.val))
+        elif self._optype == RTBlendType.OP:
+            return D3D_BLEND_OP(int(self.val))
+        elif self._optype == RTBlendType.STENCIL:
+            return D3D_STENCIL_OP(int(self.val))
+        elif self._optype == RTBlendType.CMASK:
+            return D3D_COLOR_WRITE_ENABLE(int(self.val))
+        return self.val
 
     def save(self, writer: EndianBinaryWriter):
         writer.write_float(self.val)
         writer.write_aligned_string(self.name)
 
+
 class SerializedShaderRTBlendState:
     def __init__(self, reader: ObjectReader):
-        self.srcBlend = SerializedShaderFloatValue(reader)
-        self.destBlend = SerializedShaderFloatValue(reader)
-        self.srcBlendAlpha = SerializedShaderFloatValue(reader)
-        self.destBlendAlpha = SerializedShaderFloatValue(reader)
-        self.blendOp = SerializedShaderFloatValue(reader)
-        self.blendOpAlpha = SerializedShaderFloatValue(reader)
-        self.colMask = SerializedShaderFloatValue(reader)
+        self.srcBlend = SerializedShaderFloatValue(reader, RTBlendType.BLEND)
+        self.destBlend = SerializedShaderFloatValue(reader, RTBlendType.BLEND)
+        self.srcBlendAlpha = SerializedShaderFloatValue(reader, RTBlendType.BLEND)
+        self.destBlendAlpha = SerializedShaderFloatValue(reader, RTBlendType.BLEND)
+        self.blendOp = SerializedShaderFloatValue(reader, RTBlendType.OP)
+        self.blendOpAlpha = SerializedShaderFloatValue(reader, RTBlendType.OP)
+        self.colMask = SerializedShaderFloatValue(reader, RTBlendType.CMASK)
 
     def save(self, writer: EndianBinaryWriter):
         self.srcBlend.save(writer)
@@ -257,10 +325,10 @@ class SerializedShaderRTBlendState:
 
 class SerializedStencilOp:
     def __init__(self, reader: ObjectReader):
-        self.pass_ = SerializedShaderFloatValue(reader)
-        self.fail = SerializedShaderFloatValue(reader)
-        self.zFail = SerializedShaderFloatValue(reader)
-        self.comp = SerializedShaderFloatValue(reader)
+        self.pass_ = SerializedShaderFloatValue(reader, RTBlendType.STENCIL)
+        self.fail = SerializedShaderFloatValue(reader, RTBlendType.STENCIL)
+        self.zFail = SerializedShaderFloatValue(reader, RTBlendType.STENCIL)
+        self.comp = SerializedShaderFloatValue(reader, RTBlendType.STENCIL)
 
     def save(self, writer: EndianBinaryWriter):
         self.pass_.save(writer)
