@@ -58,24 +58,16 @@ def import_pyfmodex():
     # prepare the environment for pyfmodex
     if system == "Windows":
         # register fmod.dll, so that windll.fmod in pyfmodex can find it
-        ctypes.WinDLL(os.path.join(LIB_PATH, "fmod.dll"))
-        import pyfmodex
+        os.environ["PYFMODEX_DLL_PATH"] = os.path.join(LIB_PATH, "fmod.dll")
     else:
-        # It's a bit more complicated on Linux and Mac
-        # as CDLL doesn't cache the loaded libraries.
-        # So our only option is to hook into the ctypes loader
-        # and add the path to the library there.
-        CDLL = ctypes.CDLL
+        ext = "dylib" if system == "Darwin" else "so"
+        os.environ["PYFMODEX_DLL_PATH"] = os.path.join(LIB_PATH, f"libfmod.{ext}")
 
-        def cdll_hook(name, *args, **kwargs):
-            if name.startswith("libfmod"):
-                name = os.path.join(LIB_PATH, name)
-            return CDLL(name, *args, **kwargs)
+        # hotfix ctypes for pyfmodex for non windows
+        ctypes.windll = getattr(ctypes, "windll", None)
 
-        ctypes.CDLL = cdll_hook
-        import pyfmodex
+    import pyfmodex
 
-        ctypes.CDLL = CDLL
 
 
 def extract_audioclip_samples(audio) -> dict:
@@ -89,11 +81,13 @@ def extract_audioclip_samples(audio) -> dict:
         # eg. StreamedResource not available
         return {}
 
-    magic = memoryview(audio.m_AudioData)[:4]
-    if magic == b"OggS":
-        return {"%s.ogg" % audio.name: audio.m_AudioData}
-    elif magic == b"RIFF":
-        return {"%s.wav" % audio.name: audio.m_AudioData}
+    magic = memoryview(audio.m_AudioData)[:8]
+    if magic[:4] == b"OggS":
+        return {f"{audio.m_Name}.ogg": audio.m_AudioData}
+    elif magic[:4] == b"RIFF":
+        return {f"{audio.m_Name}.wav": audio.m_AudioData}
+    elif magic[4:8] == b"ftyp":
+        return {f"{audio.m_Name}.m4a": audio.m_AudioData}
     return dump_samples(audio)
 
 
@@ -109,7 +103,7 @@ def dump_samples(clip):
     sound = system.create_sound(
         bytes(clip.m_AudioData),
         pyfmodex.flags.MODE.OPENMEMORY,
-        exinfo=pyfmodex.system.CREATESOUNDEXINFO(
+        exinfo=pyfmodex.structure_declarations.CREATESOUNDEXINFO(
             length=clip.m_Size,
             numchannels=clip.m_Channels,
             defaultfrequency=clip.m_Frequency,
@@ -134,7 +128,7 @@ def dump_samples(clip):
 
 def subsound_to_wav(subsound):
     # get sound settings
-    length = subsound.get_length(0x00000004)  # TIMEUNIT.PCMBYTES
+    length = subsound.get_length(pyfmodex.enums.TIMEUNIT.PCMBYTES)
     channels = subsound.format.channels
     bits = subsound.format.bits
     sample_rate = int(subsound.default_frequency)

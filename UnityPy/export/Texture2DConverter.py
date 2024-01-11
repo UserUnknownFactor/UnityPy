@@ -5,6 +5,7 @@ from copy import copy
 from io import BytesIO
 import struct
 from ..enums import TextureFormat, BuildTarget
+from ..helpers import TextureSwizzler
 
 TF = TextureFormat
 

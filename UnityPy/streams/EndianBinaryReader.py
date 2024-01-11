@@ -1,5 +1,5 @@
 from struct import Struct, unpack
-from re import compile
+import re
 from typing import List, Union, Callable
 from io import BytesIO, IOBase, SEEK_END, SEEK_SET, SEEK_CUR
 from sys import byteorder
@@ -12,7 +12,7 @@ DEBUG = config.DEBUG
     #import traceback
 
 SYS_ENDIAN = "<" if byteorder == "little" else ">"
-RE_NOT_0 = compile(b"(.*?)\0")
+RE_NOT_0 = re.compile(b"(.*?)\0", re.S)
 
 from ..math import Color, Matrix4x4, Quaternion, Vector2, Vector3, Vector4, Rectangle
 

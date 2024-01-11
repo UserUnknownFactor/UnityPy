@@ -35,9 +35,12 @@ def ConvertSerializedShader(m_Shader):
 
     platformNumber = len(m_Shader.platforms)
     for i in range(platformNumber):
-        if i >= len(m_Shader.compressedLengths): break
+        if i >= len(m_Shader.compressedLengths) or i >= len(m_Shader.decompressedLengths):
+            # m_Shader.platforms shouldn't be longer than m_shader.[de]compressedLengths, but it is
+            break
         compressedSize = m_Shader.compressedLengths[i]
         compressedBytes = m_Shader.compressedBlob[int(m_Shader.offsets[i]):int(m_Shader.offsets[i]) + compressedSize]
+
         decompressedSize = m_Shader.decompressedLengths[i]
         decompressedBytes = CompressionHelper.decompress_lz4(compressedBytes, decompressedSize)
 
@@ -62,7 +65,7 @@ def ConvertSerializedShaderParsedForm(m_ParsedForm, platforms, shaderPrograms):
         sb.append("CustomEditor \"{0}\"\n".format(m_ParsedForm.m_CustomEditorName))
 
     sb.append("}")
-    return "".join(sb)
+    return ''.join(sb)
 
 def ConvertSerializedSubShader(m_SubShader, platforms, shaderPrograms):
     sb = []
@@ -77,7 +80,7 @@ def ConvertSerializedSubShader(m_SubShader, platforms, shaderPrograms):
         sb.append(ConvertSerializedPass(m_Passe, platforms, shaderPrograms))
 
     sb.append("}\n")
-    return "".join(sb)
+    return ''.join(sb)
 
 def ConvertSerializedPass(m_Passe, platforms, shaderPrograms):
     sb = []
@@ -127,7 +130,7 @@ def ConvertSerializedPass(m_Passe, platforms, shaderPrograms):
 
         sb.append("}\n")
 
-    return "".join(sb)
+    return ''.join(sb)
 
 def ConvertSerializedSubPrograms(m_SubPrograms, platforms, shaderPrograms):
     sb = []
@@ -145,8 +148,10 @@ def ConvertSerializedSubPrograms(m_SubPrograms, platforms, shaderPrograms):
             subPrograms = list(_programList)
             isTier = len(subPrograms) > 1
             for i in range(len(platforms)):
+                if i >= len(shaderPrograms):
+                    # platforms shouldn't be longer than shaderPrograms, but it is
+                    break
                 platform = platforms[i]
-                if i >= len(shaderPrograms): break
 
                 if CheckGpuProgramUsable(platform, programKey):
                     for subProgram in subPrograms:
@@ -158,7 +163,7 @@ def ConvertSerializedSubPrograms(m_SubPrograms, platforms, shaderPrograms):
                         sb.append("\n}\n")
                     break
 
-    return "".join(sb)
+    return ''.join(sb)
 
 
 def ConvertSerializedShaderState(m_State):
@@ -221,13 +226,13 @@ def ConvertSerializedShaderState(m_State):
         sb.append("  Lighting {0}\n".format(m_State.lighting and "On" or "Off"))
 
     sb.append("  GpuProgramID {0}\n".format(m_State.gpuProgramID))
-    return "".join(sb)
+    return ''.join(sb)
 
 
 def ConvertSerializedShaderRTBlendState(rbBlend):
     # TODO Blend
     sb = []
-    return "".join(sb)
+    return ''.join(sb)
 
 def ConvertSerializedTagMap(m_Tags, intent: int):
     sb = []
@@ -238,7 +243,7 @@ def ConvertSerializedTagMap(m_Tags, intent: int):
             sb.append("\"{0}\" = \"{1}\" ".format(key, value))
         sb.append("}\n")
 
-    return "".join(sb)
+    return ''.join(sb)
 
 def ConvertSerializedProperties(m_PropInfo):
     sb = []
@@ -248,7 +253,7 @@ def ConvertSerializedProperties(m_PropInfo):
         sb.append(ConvertSerializedProperty(m_Prop))
 
     sb.append("}\n")
-    return "".join(sb)
+    return ''.join(sb)
 
 def ConvertSerializedProperty(m_Prop):
     sb = []
@@ -297,7 +302,7 @@ def ConvertSerializedProperty(m_Prop):
         raise ValueError(m_Prop.m_Type)
 
     sb.append("\n")
-    return "".join(map(str,sb))
+    return ''.join(map(str,sb))
 
 def CheckGpuProgramUsable(platform, programType):
     if platform == ShaderCompilerPlatform.kShaderCompPlatformGL:
@@ -577,4 +582,4 @@ class ShaderSubProgram:
                 sb.append("//shader disassembly not supported on {0}".format(self.m_ProgramType))
 
         sb.append('"')
-        return "".join(sb)
+        return ''.join(sb)
