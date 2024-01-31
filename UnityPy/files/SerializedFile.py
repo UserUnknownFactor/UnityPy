@@ -294,8 +294,13 @@ class SerializedFile(File.File):
                     print(f"Error during the parsing of <{obj.type.name} path_id: {obj.path_id}; " +
                         f"asset_file: {obj.assets_file.name}>")
                     print(e)
-                    print("Trying to return its TypeTree...")
-                    self.assetbundle = obj.read_typetree(wrap=True)
+                    if config.ENABLE_TYPETREEHELPER_FALLBACK:
+                        print("Trying to return its TypeTree...")
+                        self.assetbundle = obj.read_typetree(wrap=True)
+                    else:
+                        self.assetbundle = None
+                        self._container = ContainerHelper([])
+                        break
                 self._container = ContainerHelper(self.assetbundle.m_Container)
                 break
         else:

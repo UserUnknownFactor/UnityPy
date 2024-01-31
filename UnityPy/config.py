@@ -1,11 +1,13 @@
 # used when no version is defined by the SerializedFile or its BundleFile
-FALLBACK_UNITY_VERSION = "2.5.0f5"
+FALLBACK_UNITY_VERSION = "2022.1.3f1"
 
 # determines if the TypeTrees for the Object types will be parsed
 #  disabling this will reduce the load time by a lot
 #  (half of the time is spend on parsing the typetrees)
 #  but it will also prevent saving an edited file
 SERIALIZED_FILE_PARSE_TYPETREE = False
+
+ENABLE_TYPETREEHELPER_FALLBACK = False # Enable TypeTreeHelper parsing in asset bundles
 
 EXTENDED_SEARCH = False # Search all cwd subdirectories for resources
 

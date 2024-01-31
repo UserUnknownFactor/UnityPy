@@ -168,7 +168,7 @@ class ObjectReader:
                     print("Trying to return its TypeTree...")
                 else:
                     raise e
-        if not obj:
+        if not obj and config.ENABLE_TYPETREEHELPER_FALLBACK:
             obj = self.read_typetree(wrap=True)
         self._last_read_pos = self.reader.Position
         end_pos = self.byte_start + self.byte_size

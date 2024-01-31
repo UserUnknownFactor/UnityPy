@@ -45,7 +45,6 @@ def get_resource_data(*args):
         environment = assets_file.environment
         reader = None
         for name in possible_names:
-            if not os.path.isfile(name): continue
             reader = environment.get_cab(name)
             if reader:
                 if isinstance(reader, File.__class__): continue

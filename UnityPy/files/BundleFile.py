@@ -438,13 +438,13 @@ class BundleFile(File.File):
         bytes
             The decompressed data."""
         comp_flag = CompressionFlags(flags & ArchiveFlags.CompressionTypeMask)
-        if comp_flag == CompressionFlags.LZMA:  # LZMA
+        if comp_flag == CompressionFlags.LZMA:
             compressed_data = CompressionHelper.decompress_lzma(compressed_data)
-        elif comp_flag in [CompressionFlags.LZ4, CompressionFlags.LZ4HC]:  # LZ4, LZ4HC
+        elif comp_flag in [CompressionFlags.LZ4, CompressionFlags.LZ4HC]:
             if self.decryptor is not None and flags & 0x100:
                 compressed_data = self.decryptor.decrypt_block(index, compressed_data)
             compressed_data = CompressionHelper.decompress_lz4(compressed_data, uncompressed_size)
-        elif comp_flag == CompressionFlags.LZHAM:  # LZHAM
+        elif comp_flag == CompressionFlags.LZHAM:
             raise NotImplementedError("LZHAM decompression not implemented")
 
         return compressed_data
