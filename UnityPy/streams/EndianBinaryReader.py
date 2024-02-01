@@ -316,7 +316,6 @@ class EndianBinaryReader_Streamable(EndianBinaryReader):
             self.stream.close()
         else:
             stream.close()
-        pass
 
     def read(self, length: int):
         if not length:

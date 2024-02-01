@@ -84,15 +84,17 @@ class File(object):
                     yield obj
             elif isinstance(f, ObjectReader.ObjectReader):
                 yield f
+                
+    def close(self):
+        for f in self.files:
+            self.files[f].close()
 
-    def read_files(self, reader: EndianBinaryReader, files: list, dump: bool=False, ignore_res: bool = False, ignore_files_bigger:int = 1000000000):
+    def read_files(self, reader: EndianBinaryReader, files: list, dump: bool=False):
+        if reader is None or len(files) == 0:
+            return
         # read file data and convert it
         for embedded_file in files:
             name = embedded_file.path
-            if ignore_res and ".res" in name.lower():
-                continue
-            if ignore_files_bigger and embedded_file.size > ignore_files_bigger:
-                continue
             reader.Position = embedded_file.offset
             if dump:
                 a_name = self.allowed_path(name)

@@ -2,6 +2,7 @@
 from ..streams import EndianBinaryReader, EndianBinaryWriter
 from ctypes import c_uint32
 import tabulate
+import base64
 from ..exceptions import TypeTreeError as TypeTreeError
 from .. import config
 
@@ -314,8 +315,7 @@ def read_value(nodes: List[TypeTreeNode], reader: EndianBinaryReader, i: c_uint3
                     size = nodes[i.value].m_ByteSize
                     value = reader.read_bytes(size)
                 else:
-                    value = reader.read_the_rest(reader).decode('unicode-escape')
-                    pass
+                    value = base64.b64encode(bytes(reader.read_the_rest(reader))).decode('latin1')
             case _:
                 # Vector
                 if i.value < len(nodes) - 1 and nodes[i.value + 1].m_Type == "Array":
@@ -598,7 +598,7 @@ def write_value(
             writer.write_bytes(value)
             i.value += 2  # Size, Data(char/uint8)
         case "UnityPyBinaryBlob":
-            writer.write_bytes(value.encode('latin-1'))
+            writer.write_bytes(base64.b64decode(value))
             i.value += 1  # Data(bytes)
         case _:
             # Vector

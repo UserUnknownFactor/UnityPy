@@ -8,6 +8,7 @@ from UnityPy.helpers.GameObjectNode import GameObjectNode
 from UnityPy.streams import EndianBinaryReader
 from UnityPy.helpers.TypeTreeHelper import TypeTreeNode
 from tqdm import tqdm
+import json
 
 TYPES = [CID.TextAsset, CID.MonoBehaviour, CID.Texture2D, CID.Shader]
 BUILD_SCENE_TREE = True
@@ -18,6 +19,7 @@ DST = os.path.join(ROOT, "output") # destination folder
 ASSETS = glob(
     os.path.join(ROOT,"globalmanagers")) + glob(
     os.path.join(ROOT,"*.assets")) + glob(
+    os.path.join(ROOT,"StreamingAssets\\aa\\StandaloneWindows64\\*.bundle")) + glob(
     os.path.join(ROOT,"level*")) + glob(
     os.path.join(ROOT,"data.unity3d")) # sources
 
@@ -47,12 +49,27 @@ def main():
     global parent_root
 
     os.makedirs(DST, exist_ok=True)
+    GLOBAL_MAP = {}
+    if not os.path.isfile("globalmap.json"):
+        print("Preparing file map...")
+        for file_name in tqdm(ASSETS):
+            am = Environment(globalmap=GLOBAL_MAP)
+            asset = am.load_file(file_name, name=file_name, dry_run=True)
+            GLOBAL_MAP.update(am.GLOBAL_FILE_MAP)
+            asset.close()
+            am.close()
+        with open("globalmap.json", "w", encoding="utf-8-sig") as p:
+            json.dump(GLOBAL_MAP, p)
+    else:
+        with open("globalmap.json", "r", encoding="utf-8-sig") as p:
+            GLOBAL_MAP = json.load(p)
+
     for file_name in ASSETS:
         parent_root = GameObjectNode()
+        am = Environment(globalmap=GLOBAL_MAP)
         component_dict = {}
         src = os.path.realpath(os.path.join(ROOT, file_name))
         print("Parsing file:", src)
-        am = Environment()
         if "StreamingAssets" in src:
             key = 0
             asset = am.load_file(EndianBinaryReader(sample, encrypt_func=get_encryption_func(key)), name=file_name)
@@ -70,6 +87,8 @@ def main():
         for item in tqdm(list(asset.get_filtered_assets(TYPES))):
             export_obj(item, item.assets_file.name)
 
+        asset.close()
+        am.close()
 
 def make_path(*args):
     fp = os.path.join(*args)
@@ -184,8 +203,8 @@ def export_obj(obj, asset: str) -> list:
         else:
             script = data.m_Script.read()
             cname = script.m_ClassName
-            if "TextMeshProUGUI" not in cname:
-                return [obj.path_id]
+            #if "TextMeshProUGUI" not in cname:
+                #return [obj.path_id]
             if not is_raw or not script or (
                 ASSEMBLY_TREES and cname not in ASSEMBLY_TREES):
                 pass

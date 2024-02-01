@@ -165,7 +165,8 @@ class ObjectReader:
                     print(f"Error during the parsing of <{self.type.name} path_id: {self.path_id}; " +
                           f"asset_file: {self.assets_file.name}>")
                     print(e)
-                    print("Trying to return its TypeTree...")
+                    if config.ENABLE_TYPETREEHELPER_FALLBACK:
+                        print("Trying to return its TypeTree...")
                 else:
                     raise e
         if not obj and config.ENABLE_TYPETREEHELPER_FALLBACK:
@@ -173,7 +174,7 @@ class ObjectReader:
         self._last_read_pos = self.reader.Position
         end_pos = self.byte_start + self.byte_size
         if config.DEBUG_TYPETREES and self._last_read_pos < end_pos and obj and obj.type == ClassIDType.MonoBehaviour:
-            raise Exception(f"self._last_read_pos < end_pos: {self._last_read_pos} < {end_pos} (diff = {end_pos-self._last_read_pos}) in {obj}")
+            print(f"self._last_read_pos < end_pos: {self._last_read_pos} < {end_pos} (diff = {end_pos-self._last_read_pos}) in {obj}")
         return obj
 
     def get(self, key, default=None):

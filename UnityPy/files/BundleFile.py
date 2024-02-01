@@ -7,6 +7,7 @@ from . import File
 from ..enums import ArchiveFlags, ArchiveFlagsOld, CompressionFlags
 from ..helpers import ArchiveStorageManager, CompressionHelper
 from ..streams import EndianBinaryReader, EndianBinaryWriter
+from tempfile import SpooledTemporaryFile
 
 from .. import config
 
@@ -34,16 +35,24 @@ class BundleFile(File.File):
         self.version_player = reader.read_string_to_null()
         self.version_engine = reader.read_string_to_null()
 
+        dry_run = kwargs.get("dry_run", False)
+
         if signature == "UnityArchive":
             raise NotImplementedError("BundleFile - UnityArchive")
         elif signature in ["UnityWeb", "UnityRaw"]:
-            blocksReader = self.read_web_raw(reader)
+            self.blocksReader = self.read_web_raw(reader)
         elif signature == "UnityFS":
-            blocksReader = self.read_fs(reader)
+            self.blocksReader = self.read_fs(reader, dry_run=dry_run)
         else:
-            raise NotImplementedError(f"Unknown Bundle signature: {signature}")
+            raise NotImplementedError(f"Unknown Bundle {name} signature:\n{signature[:80]}")
 
-        self.read_files(blocksReader, self.m_DirectoryInfo, kwargs.get("dump", False))
+        if not dry_run:
+            self.read_files(self.blocksReader, self.m_DirectoryInfo, kwargs.get("dump", False))
+
+    def close(self):
+        if self.blocksReader:
+            self.blocksReader.close()
+        super().close()
 
     def read_web_raw(self, reader: EndianBinaryReader):
         # def read_header_and_blocks_info(self, reader:EndianBinaryReader):
@@ -86,7 +95,7 @@ class BundleFile(File.File):
 
         return blocksReader
 
-    def read_fs(self, reader: EndianBinaryReader):
+    def read_fs(self, reader: EndianBinaryReader, dry_run: bool = False):
         #assert reader != None, "Unity file system reader must be set"
         size = reader.read_long()
         #assert size == reader.Length, f"File is truncated"
@@ -166,6 +175,9 @@ class BundleFile(File.File):
             for _ in range(nodesCount)
         ]
 
+        if dry_run:
+            reader.close()
+            return None
 
         if (
             isinstance(self.dataflags, ArchiveFlags)
@@ -173,12 +185,14 @@ class BundleFile(File.File):
         ):
             reader.align_stream(16)
 
+        #size = sum([blockInfo.uncompressedSize for blockInfo in self.m_BlocksInfo])
         if all([CompressionFlags(
                 blockInfo.flags & ArchiveFlags.CompressionTypeMask) == CompressionFlags.NO and not (
                 blockInfo.flags & ArchiveFlags.UnityCNEncryption) for blockInfo in self.m_BlocksInfo]):
-            size = sum([blockInfo.uncompressedSize for blockInfo in self.m_BlocksInfo])
+            # read straight from disk if the file is unpacked
             blocksReader = EndianBinaryReader(reader, offset=reader.Position, encrypt_func=reader.Encryption)
         else:
+            """
             blocksReader = EndianBinaryReader(
                 b"".join(
                     self.decompress_data(
@@ -191,7 +205,16 @@ class BundleFile(File.File):
                 ),
                 offset=(blocksInfoReader.real_offset()),
             )
-
+            """
+            temp_file = SpooledTemporaryFile(max_size=400000000, prefix="unity_bundle_data_")
+            for index, blockInfo in enumerate(self.m_BlocksInfo):
+                temp_file.write(self.decompress_data(
+                        reader.read_bytes(blockInfo.compressedSize),
+                        blockInfo.uncompressedSize,
+                        blockInfo.flags,
+                        index
+                 ))
+            blocksReader = EndianBinaryReader(temp_file, offset=0)
         return blocksReader
 
     @property

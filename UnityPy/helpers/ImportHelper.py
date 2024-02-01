@@ -131,7 +131,8 @@ def parse_file(
     name: str,
     typ: FileType = None,
     is_dependency=False,
-    dump=False
+    dump=False,
+    dry_run=False
 ) -> Union[files.File, EndianBinaryReader]:
     if typ is None:
         typ, _ = check_file_type(reader)
@@ -140,7 +141,7 @@ def parse_file(
     ):
         f = files.SerializedFile(reader, parent, name=name, is_dependency=is_dependency)
     elif typ == FileType.BundleFile:
-        f = files.BundleFile(reader, parent, name=name, is_dependency=is_dependency, dump=dump)
+        f = files.BundleFile(reader, parent, name=name, is_dependency=is_dependency, dump=dump, dry_run=dry_run)
     elif typ == FileType.WebFile:
         f = files.WebFile(reader, parent, name=name, is_dependency=is_dependency)
     else:

@@ -45,6 +45,7 @@ class AssetBundle(NamedObject):
                 key = reader.read_aligned_string()
                 value = reader.read_aligned_string()
                 self.m_SceneHashes[key] = value
+        pass
 
 
     def save(self, writer: EndianBinaryWriter = None):

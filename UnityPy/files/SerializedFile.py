@@ -383,8 +383,8 @@ class SerializedFile(File.File):
         number_of_nodes = self.reader.read_u_int()
         string_buffer_size = self.reader.read_u_int()
 
-        type = f"{reader.endian}hBBIIiii"
-        keys = [
+        ttype = f"{reader.endian}hBBIIiii"
+        tkeys = [
             "m_Version",
             "m_Level",
             "m_TypeFlags",
@@ -395,10 +395,10 @@ class SerializedFile(File.File):
             "m_MetaFlag",
         ]
         if self.header.version >= 19:
-            type += "Q"
-            keys.append("m_RefTypeHash")
+            ttype += "Q"
+            tkeys.append("m_RefTypeHash")
 
-        node_struct = Struct(type)
+        node_struct = Struct(ttype)
         struct_data = reader.read(node_struct.size * number_of_nodes)
         string_buffer_reader = EndianBinaryReader(
             reader.read(string_buffer_size), reader.endian
@@ -409,7 +409,7 @@ class SerializedFile(File.File):
 
         type_tree = [
             TypeTreeNode(
-                **dict(zip(keys, raw_node)),
+                **dict(zip(tkeys, raw_node)),
                 m_Type = read_string(string_buffer_reader, raw_node[3]),
                 m_Name = read_string(string_buffer_reader, raw_node[4]),
             )

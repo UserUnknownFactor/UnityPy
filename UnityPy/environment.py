@@ -15,8 +15,10 @@ from .enums import FileType
 from .helpers import ImportHelper
 from .helpers.ResourceReader import search_resource_file
 from .streams import EndianBinaryReader, EndianBinaryWriter
+from . import config
 
 RE_SPLIT = re.compile(r"(.*?([^\/\\]+?))\.split\d+")
+RE_ARCHIVE = re.compile(r"archive:\/([^\/]+)\/.+")
 
 IGNORE_DIR_COUNT = 0
 DEFAULT_TYPES = ['MonoBehaviour', 'Texture2D', 'TextAsset', 'PlayerSettings']
@@ -30,6 +32,10 @@ class Environment:
     path: str
     local_files: List[str]
     local_files_simple: List[str]
+    GLOBAL_FILE_MAP = {}
+
+    def print_env_map(self):
+        print(json.dumps(self.GLOBAL_FILE_MAP, ensure_ascii=True, indent=2))
 
     def __init__(self, *args, **kwargs):
         self.files = {}
@@ -42,6 +48,9 @@ class Environment:
         #self.fs = kwargs.get("fs", None) or LocalFileSystem()
         self.local_files = []
         self.local_files_simple = []
+        globalmap = kwargs.get("globalmap", None)
+        if globalmap:
+            self.GLOBAL_FILE_MAP.update(globalmap)
 
         if args:
             for arg in args:
@@ -98,7 +107,8 @@ class Environment:
         parent: Union["Environment", File] = None,
         name: str = None,
         is_dependency: bool = False,
-        dump: bool = False
+        dump: bool = False,
+        dry_run: bool = False
     ):
         if not file:
             return None
@@ -108,6 +118,7 @@ class Environment:
 
         if isinstance(file, str):
             split_match = RE_SPLIT.match(file)
+            archive_match = RE_ARCHIVE.match(file)
             if split_match:
                 basepath, _ = split_match.groups()
                 file = []
@@ -120,11 +131,32 @@ class Environment:
                         break
                 name = basepath
                 file = b"".join(file)
+            elif archive_match:
+                file = archive_match.group(1)
+                result = self.get_cab(file)
+                if result:
+                    return result
+                efile = self.GLOBAL_FILE_MAP.get(simplify_name(file), None)
+                if not efile:
+                    return None
+                else:
+                    typ, reader = ImportHelper.check_file_type(efile)
+                    if typ == FileType.BundleFile:
+                        f = ImportHelper.parse_file(
+                                reader, self, name=file, typ=typ,
+                                is_dependency=True, dump=dump, dry_run=dry_run
+                            )
+                        if f and f.files and isinstance(f.files[file], (SerializedFile, EndianBinaryReader)):
+                            self.register_cab(file, f.files[file])
+                    return self.get_cab(file)
             else:
                 name = file
                 if file and not os.path.isfile(file):
                     # should have fallback, because why do it manually...
-                    file = search_resource_file(self._cwd, file)
+                    if config.EXTENDED_SEARCH:
+                        file = search_resource_file(self._cwd, file)
+                    else:
+                        return None
                 if file and os.path.isfile(file):
                     file = open(file, "rb")
                 else:
@@ -137,19 +169,24 @@ class Environment:
         else:
             stream_name = getattr(file, "name", None)
             if not stream_name:
-                stream_name = str(file.__hash__()) if hasattr(file, "__hash__") else ""
+                stream_name = str(abs(file.__hash__())) if hasattr(file, "__hash__") else ""
         f = None
         if typ == FileType.ZIP:
             f = self.load_zip_file(file)
         else:
             f = ImportHelper.parse_file(
                     reader, self, name=stream_name, typ=typ,
-                    is_dependency=is_dependency, dump=dump
+                    is_dependency=is_dependency, dump=dump, dry_run=dry_run
                 )
         if f:
             if isinstance(f, (SerializedFile, EndianBinaryReader)):
                 self.register_cab(stream_name, f)
             self.files[stream_name] = f
+        if hasattr(f, "m_DirectoryInfo"):
+            for fmap in f.m_DirectoryInfo:
+                fmap = simplify_name(fmap.path)
+                if not fmap in self.GLOBAL_FILE_MAP:
+                    self.GLOBAL_FILE_MAP[fmap] = stream_name
         return f
 
     def load_zip_file(self, value):
@@ -164,6 +201,11 @@ class Environment:
         z = ZipFile(buffer)
         self.load_assets(z.namelist(), lambda x: z.open(x, "r"))
         z.close()
+
+    def close(self):
+        self.unregister_all_cabs()
+        for f in list(self.files):
+            self.files[f].close()
 
     def save(self, pack: str = "none", writer_generator: Callable = None, out_path=None):
         """Saves all changed assets.
@@ -300,7 +342,11 @@ class Environment:
         """
         self.cabs[simplify_name(name)] = item
 
-    def unregister_cab(self, name: str) -> None:
+    def unregister_all_cabs(self):
+        for cab in list(self.cabs.keys()):
+            self.unregister_cab(cab)
+    
+    def unregister_cab(self, name: str):
         """
         Removes a cab from internal listing.
 
@@ -311,7 +357,7 @@ class Environment:
         """
         cab = self.cabs.get(simplify_name(name), None)
         if cab:
-            # TODO: Will this not close file handles?
+            self.cabs[simplify_name(name)].close()
             del self.cabs[simplify_name(name)]
 
 
@@ -327,7 +373,7 @@ class Environment:
         Returns
         -------
         File
-            The cab file.
+            The parsed cab file.
         """
         return self.cabs.get(simplify_name(name), None)
 
