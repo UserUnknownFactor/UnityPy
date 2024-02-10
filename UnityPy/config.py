@@ -7,6 +7,8 @@ FALLBACK_UNITY_VERSION = "2022.1.3f1"
 #  but it will also prevent saving an edited file
 SERIALIZED_FILE_PARSE_TYPETREE = False
 
+BIG_OBJECT_GUARD = 2 * 1000 * 1000 * 1000 # Don't try to unpack bigger objects than this; 0 to disable
+
 ENABLE_TYPETREEHELPER_FALLBACK = False # Enable TypeTreeHelper parsing in asset bundles
 
 EXTENDED_SEARCH = False # Search all cwd subdirectories for resources

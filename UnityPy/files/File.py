@@ -6,6 +6,7 @@ from collections import namedtuple
 from os.path import basename, isfile, join, dirname
 from os import makedirs, sep
 from re import sub
+import weakref
 
 DirectoryInfo = namedtuple("DirectoryInfo", "path offset size")
 
@@ -27,10 +28,13 @@ class File(object):
         self.files = {}
         self.is_changed = False
         self.cab_file = "CAB-UnityPy_Mod.resS"
-        self.parent = parent
-        self.environment = self.environment = (
-            getattr(parent, "environment", parent) if parent else None
-        )
+        if parent:
+            self.parent = weakref.proxy(parent)
+            self.environment = getattr(self.parent, "environment", self.parent)
+        else:
+            self.parent = None
+            self.environment = None
+       
         self.name = basename(name) if isinstance(name, str) else ""
         self.is_dependency = is_dependency
 
@@ -88,6 +92,9 @@ class File(object):
     def close(self):
         for f in self.files:
             self.files[f].close()
+        self.files = {}
+        self.environment = None
+        self.parent = None
 
     def read_files(self, reader: EndianBinaryReader, files: list, dump: bool=False):
         if reader is None or len(files) == 0:

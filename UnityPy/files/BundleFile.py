@@ -30,6 +30,8 @@ class BundleFile(File.File):
         self, reader: EndianBinaryReader, parent: File, name: str = None, **kwargs
     ):
         super().__init__(parent=parent, name=name, **kwargs)
+        self.blocksReader = None
+        
         signature = self.signature = reader.read_string_to_null()
         self.version = reader.read_u_int()
         self.version_player = reader.read_string_to_null()
@@ -46,12 +48,17 @@ class BundleFile(File.File):
         else:
             raise NotImplementedError(f"Unknown Bundle {name} signature:\n{signature[:80]}")
 
-        if not dry_run:
+        if not dry_run and self.blocksReader:
             self.read_files(self.blocksReader, self.m_DirectoryInfo, kwargs.get("dump", False))
 
     def close(self):
-        if self.blocksReader:
+        if hasattr(self, "blocksReader") and self.blocksReader:
             self.blocksReader.close()
+            self.blocksReader = None
+        if hasattr(self, "m_BlocksInfo"):
+            del self.m_BlocksInfo
+        if hasattr(self, "m_DirectoryInfo"):
+            del self.m_DirectoryInfo
         super().close()
 
     def read_web_raw(self, reader: EndianBinaryReader):
@@ -185,7 +192,12 @@ class BundleFile(File.File):
         ):
             reader.align_stream(16)
 
-        #size = sum([blockInfo.uncompressedSize for blockInfo in self.m_BlocksInfo])
+        size = sum([blockInfo.uncompressedSize for blockInfo in self.m_BlocksInfo])
+        if config.BIG_OBJECT_GUARD > 0 and size > config.BIG_OBJECT_GUARD:
+            print(f"object in {reader.stream.name if hasattr(reader, 'stream') else ''} is too big (>{config.BIG_OBJECT_GUARD}B)")
+            reader.close()
+            return None
+
         if all([CompressionFlags(
                 blockInfo.flags & ArchiveFlags.CompressionTypeMask) == CompressionFlags.NO and not (
                 blockInfo.flags & ArchiveFlags.UnityCNEncryption) for blockInfo in self.m_BlocksInfo]):

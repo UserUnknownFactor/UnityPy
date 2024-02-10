@@ -14,6 +14,7 @@ def save_ptr(obj, writer: EndianBinaryWriter):
         writer.write_long(obj.path_id)
 
 WARNED_NOTFOUND = []
+WARNED_NOTFOUND_ONCE = True
 
 class PPtr:
     autopreload: bool = True
@@ -59,7 +60,7 @@ class PPtr:
                 external_name = self.external_name
                 # try to find it in the already registered cabs
 
-                if external_name in WARNED_NOTFOUND:
+                if WARNED_NOTFOUND_ONCE and external_name in WARNED_NOTFOUND:
                     self._obj = None
                     return self._obj
 
@@ -84,7 +85,7 @@ class PPtr:
                 f"  for Web-&BundleFiles: env.load_file(\"{self.external_name}\")\n" +
                 f"  for SerializedFiles: env.register_cab(\"{self.external_name}\")\n"+
                 f"  or env.load_file(full path to \"{self.external_name}\")")
-                if self.external_name not in WARNED_NOTFOUND:
+                if WARNED_NOTFOUND_ONCE and self.external_name not in WARNED_NOTFOUND:
                     WARNED_NOTFOUND.append(self.external_name)
             elif self.path_id:
                 print(f"Couldn't find referenced object with path_id: {self.path_id} " +

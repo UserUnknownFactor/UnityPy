@@ -1,6 +1,7 @@
 import io
 import os
 import re
+import weakref
 #import ntpath
 from typing import List, Callable, Dict, Union
 from collections import Counter
@@ -16,6 +17,8 @@ from .helpers import ImportHelper
 from .helpers.ResourceReader import search_resource_file
 from .streams import EndianBinaryReader, EndianBinaryWriter
 from . import config
+
+#from memory_profiler import profile 
 
 RE_SPLIT = re.compile(r"(.*?([^\/\\]+?))\.split\d+")
 RE_ARCHIVE = re.compile(r"archive:\/([^\/]+)\/.+")
@@ -76,6 +79,26 @@ class Environment:
 
         if not self.path:
             self.path = os.getcwd()
+
+    @staticmethod
+    def prepare_global_map(assets, progress_fn=lambda r: r, map_name="globalmap.json", encoding="utf-8-sig"):
+        import json
+        print("Preparing file map...")
+        GLOBAL_MAP = {}
+        if not os.path.isfile("globalmap.json"):
+            for file_name in progress_fn(assets):
+                am = Environment(globalmap=GLOBAL_MAP)
+                asset = am.load_file(file_name, name=file_name, dry_run=True)
+                GLOBAL_MAP.update(am.GLOBAL_FILE_MAP)
+                asset.close()
+                am.close()
+            with open(map_name, "w", encoding=encoding) as p:
+                json.dump(GLOBAL_MAP, p)
+        else:
+            with open(map_name, "r", encoding=encoding) as p:
+                GLOBAL_MAP = json.load(p)
+        return GLOBAL_MAP
+
 
     def load_files(self, files: List[str]):
         """Loads all files (list) into the Environment and merges .split files for common usage."""
@@ -206,6 +229,7 @@ class Environment:
         self.unregister_all_cabs()
         for f in list(self.files):
             self.files[f].close()
+        self.files = {}
 
     def save(self, pack: str = "none", writer_generator: Callable = None, out_path=None):
         """Saves all changed assets.
@@ -345,6 +369,7 @@ class Environment:
     def unregister_all_cabs(self):
         for cab in list(self.cabs.keys()):
             self.unregister_cab(cab)
+        self.cabs = {}
     
     def unregister_cab(self, name: str):
         """

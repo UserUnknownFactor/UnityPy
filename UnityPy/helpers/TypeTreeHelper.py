@@ -209,7 +209,7 @@ def read_typetree(
             except:
                 pass
             raise TypeTreeError(
-                f"Error reading object{idobj}: TypeTree describes more bytes than the object has"
+                f"Error reading object{idobj}: TypeTreeNode<{node.m_Name}> specifies more bytes than the object size"
                 #+f"\n{json.dumps(debug_data, indent=4)}"
                 ,obj
             )
@@ -228,7 +228,7 @@ def read_typetree(
         except:
             pass
         raise TypeTreeError(
-            f"Error reading object{idobj}: TypeTree specifies {_read} bytes, but object size is {reader.byte_size} bytes"
+            f"Error reading object{idobj}: {nodes[0]} specifies {_read} bytes, but object size is {reader.byte_size} bytes"
             #+f"\n{json.dumps(debug_data, indent=4)}"
             ,obj
         )

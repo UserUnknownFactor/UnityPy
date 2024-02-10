@@ -49,20 +49,7 @@ def main():
     global parent_root
 
     os.makedirs(DST, exist_ok=True)
-    GLOBAL_MAP = {}
-    if not os.path.isfile("globalmap.json"):
-        print("Preparing file map...")
-        for file_name in tqdm(ASSETS):
-            am = Environment(globalmap=GLOBAL_MAP)
-            asset = am.load_file(file_name, name=file_name, dry_run=True)
-            GLOBAL_MAP.update(am.GLOBAL_FILE_MAP)
-            asset.close()
-            am.close()
-        with open("globalmap.json", "w", encoding="utf-8-sig") as p:
-            json.dump(GLOBAL_MAP, p)
-    else:
-        with open("globalmap.json", "r", encoding="utf-8-sig") as p:
-            GLOBAL_MAP = json.load(p)
+    GLOBAL_MAP = Environment.prepare_global_map(ASSETS, tqdm)
 
     for file_name in ASSETS:
         parent_root = GameObjectNode()

@@ -202,7 +202,12 @@ class EndianBinaryReader_Memoryview(EndianBinaryReader):
         return self.view
 
     def close(self):
-        self.view.release()
+        if self.view:
+            if hasattr(self.view, "release"):
+                self.view.release()
+            if hasattr(self.view, "close"):
+                self.view.close()
+            self.view = None
 
     def seek(self, value):
         if  value < self.Length:
@@ -313,7 +318,9 @@ class EndianBinaryReader_Streamable(EndianBinaryReader):
     def close(self, stream=None):
         #print(f"Closing stream {stream}")
         if stream is None:
-            self.stream.close()
+            if self.stream:
+                self.stream.close()
+            self.stream = None
         else:
             stream.close()
 
