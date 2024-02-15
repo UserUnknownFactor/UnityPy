@@ -6,6 +6,7 @@ from typing import Tuple, Union
 from . import File
 from ..enums import ArchiveFlags, ArchiveFlagsOld, CompressionFlags
 from ..helpers import ArchiveStorageManager, CompressionHelper
+from ..helpers.ForceCRC32 import patch_after, get_crc32
 from ..streams import EndianBinaryReader, EndianBinaryWriter
 from tempfile import SpooledTemporaryFile
 
@@ -31,7 +32,9 @@ class BundleFile(File.File):
     ):
         super().__init__(parent=parent, name=name, **kwargs)
         self.blocksReader = None
-        
+        self.modify_crc = kwargs.get("modify_crc", False)
+        self.crc32 = None
+
         signature = self.signature = reader.read_string_to_null()
         self.version = reader.read_u_int()
         self.version_player = reader.read_string_to_null()
@@ -49,7 +52,10 @@ class BundleFile(File.File):
             raise NotImplementedError(f"Unknown Bundle {name} signature:\n{signature[:80]}")
 
         if not dry_run and self.blocksReader:
-            self.read_files(self.blocksReader, self.m_DirectoryInfo, kwargs.get("dump", False))
+            if self.modify_crc and self.crc32 is None:
+                self.crc32 = get_crc32(self.blocksReader.stream)
+                self.blocksReader.Position = 0
+            self.read_files(self.blocksReader, self.m_DirectoryInfo, **kwargs)
 
     def close(self):
         if hasattr(self, "blocksReader") and self.blocksReader:
@@ -65,8 +71,8 @@ class BundleFile(File.File):
         # def read_header_and_blocks_info(self, reader:EndianBinaryReader):
         version = self.version
         if version >= 4:
-            _hash = reader.read_bytes(16)
-            crc = reader.read_u_int()
+            self._hash= reader.read_bytes(16)
+            self.crc32 = reader.read_u_int()
 
         minimumStreamedBytes = reader.read_u_int()
         headerSize = reader.read_u_int()
@@ -104,12 +110,12 @@ class BundleFile(File.File):
 
     def read_fs(self, reader: EndianBinaryReader, dry_run: bool = False):
         #assert reader != None, "Unity file system reader must be set"
-        size = reader.read_long()
-        #assert size == reader.Length, f"File is truncated"
+        fs_size = reader.read_long()
+        #assert size <= reader.Length, f"File is truncated"
 
-        # header
-        compressedSize = reader.read_u_int()
-        uncompressedSize = reader.read_u_int()
+        # BlocksInfo header
+        bi_compressed_size = reader.read_u_int()
+        bi_uncompressed_size = reader.read_u_int()
         self.dataflags = reader.read_u_int()
 
         version = self.get_version_tuple()
@@ -147,20 +153,20 @@ class BundleFile(File.File):
         start = reader.Position
         if (self.dataflags & ArchiveFlags.BlocksInfoAtTheEnd):
             # kArchiveBlocksInfoAtTheEnd
-            reader.Position = reader.Length - compressedSize
-            blocksInfoBytes = reader.read_bytes(compressedSize)
+            reader.Position = reader.Length - bi_compressed_size
+            blocksInfoBytes = reader.read_bytes(bi_compressed_size)
             reader.Position = start
         else:
             # 0x40 kArchiveBlocksAndDirectoryInfoCombined
-            blocksInfoBytes = reader.read_bytes(compressedSize)
+            blocksInfoBytes = reader.read_bytes(bi_compressed_size)
 
         blocksInfoBytes = self.decompress_data(
-            blocksInfoBytes, uncompressedSize, self.dataflags
+            blocksInfoBytes, bi_uncompressed_size, self.dataflags
         )
         blocksInfoReader = EndianBinaryReader(blocksInfoBytes, offset=start)
 
-        uncompressedDataHash = blocksInfoReader.read_bytes(16)
-        blocksInfoCount = blocksInfoReader.read_int()
+        uncompressed_data_hash = blocksInfoReader.read_bytes(16)
+        blocksInfo_count = blocksInfoReader.read_int()
 
         self.m_BlocksInfo = [
             BlockInfo(
@@ -168,10 +174,10 @@ class BundleFile(File.File):
                 blocksInfoReader.read_u_int(),  # compressedSize
                 blocksInfoReader.read_u_short(),  # flags
             )
-            for _ in range(blocksInfoCount)
+            for _ in range(blocksInfo_count)
         ]
 
-        nodesCount = blocksInfoReader.read_int()
+        DirectoryInfo_count = blocksInfoReader.read_int()
         self.m_DirectoryInfo = [
             DirectoryInfoFS(
                 blocksInfoReader.read_long(),  # offset
@@ -179,7 +185,7 @@ class BundleFile(File.File):
                 blocksInfoReader.read_u_int(),  # flags
                 blocksInfoReader.read_string_to_null(),  # path
             )
-            for _ in range(nodesCount)
+            for _ in range(DirectoryInfo_count)
         ]
 
         if dry_run:
@@ -193,9 +199,9 @@ class BundleFile(File.File):
             reader.align_stream(16)
 
         size = sum([blockInfo.uncompressedSize for blockInfo in self.m_BlocksInfo])
+        compressed_size = sum([blockInfo.compressedSize for blockInfo in self.m_BlocksInfo])
         if config.BIG_OBJECT_GUARD > 0 and size > config.BIG_OBJECT_GUARD:
             print(f"object in {reader.stream.name if hasattr(reader, 'stream') else ''} is too big (>{config.BIG_OBJECT_GUARD}B)")
-            reader.close()
             return None
 
         if all([CompressionFlags(
@@ -307,8 +313,8 @@ class BundleFile(File.File):
         #     uncompressed_size    (int)
         #     flag                (int)
         #     ?padding?            (bool)
-        #   This will be written at the end,
-        #   because the size can only be calculated after the data compression,
+        #   This will be written at the end, because the size
+        #   can only be calculated after the data compression,
 
         # block_info:
         #     *flag & 0x80 ? at the end : right after header
@@ -336,8 +342,10 @@ class BundleFile(File.File):
         # file list & file data
         # prep nodes and build up block data
 
+        own_writer = False
         if data_writer is None:
             data_writer = EndianBinaryWriter(endian=writer.endian)
+            own_writer = True
 
         files = [
             (
@@ -352,8 +360,12 @@ class BundleFile(File.File):
             for name, f in self.files.items()
         ]
 
+        if self.modify_crc and self.crc32 is not None:
+            patch_after(data_writer.stream, self.crc32, data_writer.Length)
         file_data = data_writer.bytes
-        data_writer.close()
+        if own_writer:
+            data_writer.close()
+            del data_writer
         uncompressed_data_size = len(file_data)
 
         # compress the data

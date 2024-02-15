@@ -164,7 +164,7 @@ class EndianBinaryReader:
         """Returns the rest of the provided reader's bytes."""
         if False and DEBUG and self.BaseOffset + self.Position - reader.byte_start  > reader.byte_size:
             raise ReadingPastObject(reader)
-        return self.read_bytes(reader.byte_size - (self.BaseOffset + self.Position - reader.byte_start))
+        return self.read_bytes(reader.byte_size - (self.Position - reader.byte_start))
 
 
 class EndianBinaryReader_Memoryview(EndianBinaryReader):
@@ -217,7 +217,7 @@ class EndianBinaryReader_Memoryview(EndianBinaryReader):
 
     def seek_relative(self, value):
         new_position = self.Position + value
-        if  new_value < self.Length:
+        if new_position < self.Length:
             self.Position = new_position
         else:
             self.Position = self.Length

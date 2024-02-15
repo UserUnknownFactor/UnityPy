@@ -8,6 +8,8 @@ from os import makedirs, sep
 from re import sub
 import weakref
 
+from .. import config
+
 DirectoryInfo = namedtuple("DirectoryInfo", "path offset size")
 
 
@@ -34,7 +36,7 @@ class File(object):
         else:
             self.parent = None
             self.environment = None
-       
+
         self.name = basename(name) if isinstance(name, str) else ""
         self.is_dependency = is_dependency
 
@@ -88,7 +90,7 @@ class File(object):
                     yield obj
             elif isinstance(f, ObjectReader.ObjectReader):
                 yield f
-                
+
     def close(self):
         for f in self.files:
             self.files[f].close()
@@ -96,34 +98,36 @@ class File(object):
         self.environment = None
         self.parent = None
 
-    def read_files(self, reader: EndianBinaryReader, files: list, dump: bool=False):
+    def read_files(self, reader: EndianBinaryReader, files: list, **kwargs):
         if reader is None or len(files) == 0:
             return
         # read file data and convert it
+        dump = kwargs.get("dump", False)
         for embedded_file in files:
             name = embedded_file.path
             reader.Position = embedded_file.offset
+            size = embedded_file.size
             if dump:
                 a_name = self.allowed_path(name)
                 if not isfile(a_name):
                     self.make_path(a_name)
                     READ_BLOCK_MAX = 314572800
                     with open(a_name, "wb") as d:
-                        block_size = min(embedded_file.size, READ_BLOCK_MAX)
-                        i = embedded_file.size // READ_BLOCK_MAX
+                        block_size = min(size, READ_BLOCK_MAX)
+                        i = size // READ_BLOCK_MAX
                         j = 0
                         while (i >= 0):
                             i -= 1
                             j += 1
-                            if embedded_file.size < block_size  *  j:
+                            if size < block_size  *  j:
                                 #remainder since we read from the entire file
-                                block_size = embedded_file.size % READ_BLOCK_MAX
+                                block_size = size % READ_BLOCK_MAX
                             if block_size == 0: break
                             d.write(reader.read(block_size))
                 node_reader = EndianBinaryReader(a_name)
             else:
                 node_reader = EndianBinaryReader(
-                    reader.read(embedded_file.size),
+                    reader.read(size),
                     offset=(reader.BaseOffset + embedded_file.offset)
                 )
             f = ImportHelper.parse_file(

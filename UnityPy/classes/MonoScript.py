@@ -21,3 +21,4 @@ class MonoScript(NamedObject):
         self.m_AssemblyName = reader.read_aligned_string()
         if version < (2018, 2):  # 2018.2 down
             self.m_IsEditorScript = reader.read_boolean()
+            reader.align_stream()

@@ -1,6 +1,7 @@
 from ..files import ObjectReader
 from ..streams import EndianBinaryReader, EndianBinaryWriter
 from ..enums import ClassIDType
+from ..config import WARNED_NOTFOUND_ONCE
 
 
 def save_ptr(obj, writer: EndianBinaryWriter):
@@ -14,7 +15,6 @@ def save_ptr(obj, writer: EndianBinaryWriter):
         writer.write_long(obj.path_id)
 
 WARNED_NOTFOUND = []
-WARNED_NOTFOUND_ONCE = True
 
 class PPtr:
     autopreload: bool = True
@@ -88,8 +88,9 @@ class PPtr:
                 if WARNED_NOTFOUND_ONCE and self.external_name not in WARNED_NOTFOUND:
                     WARNED_NOTFOUND.append(self.external_name)
             elif self.path_id:
-                print(f"Couldn't find referenced object with path_id: {self.path_id} " +
-                      f"and name: {getattr(self, 'name', '')}")
+                print(f"Couldn't find referenced object with path_id: {self.path_id} " #+
+                    #f"and name: {getattr(self, 'name', '')}"
+                )
 
         return self._obj
 

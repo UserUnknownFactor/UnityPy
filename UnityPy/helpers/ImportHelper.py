@@ -131,19 +131,18 @@ def parse_file(
     name: str,
     typ: FileType = None,
     is_dependency=False,
-    dump=False,
-    dry_run=False
+    **kwargs
 ) -> Union[files.File, EndianBinaryReader]:
     if typ is None:
         typ, _ = check_file_type(reader)
     if typ == FileType.AssetsFile and not name.endswith(
         (".resS", ".resource", ".config", ".xml", ".dat", ".info", ".json", ".py", ".dll")
     ):
-        f = files.SerializedFile(reader, parent, name=name, is_dependency=is_dependency)
+        f = files.SerializedFile(reader, parent, name=name, is_dependency=is_dependency, **kwargs)
     elif typ == FileType.BundleFile:
-        f = files.BundleFile(reader, parent, name=name, is_dependency=is_dependency, dump=dump, dry_run=dry_run)
+        f = files.BundleFile(reader, parent, name=name, is_dependency=is_dependency, **kwargs)
     elif typ == FileType.WebFile:
-        f = files.WebFile(reader, parent, name=name, is_dependency=is_dependency)
+        f = files.WebFile(reader, parent, name=name, is_dependency=is_dependency, **kwargs)
     else:
         f = reader
     return f

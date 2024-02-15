@@ -18,7 +18,6 @@ from .helpers.ResourceReader import search_resource_file
 from .streams import EndianBinaryReader, EndianBinaryWriter
 from . import config
 
-#from memory_profiler import profile 
 
 RE_SPLIT = re.compile(r"(.*?([^\/\\]+?))\.split\d+")
 RE_ARCHIVE = re.compile(r"archive:\/([^\/]+)\/.+")
@@ -38,6 +37,7 @@ class Environment:
     GLOBAL_FILE_MAP = {}
 
     def print_env_map(self):
+        import json
         print(json.dumps(self.GLOBAL_FILE_MAP, ensure_ascii=True, indent=2))
 
     def __init__(self, *args, **kwargs):
@@ -130,8 +130,7 @@ class Environment:
         parent: Union["Environment", File] = None,
         name: str = None,
         is_dependency: bool = False,
-        dump: bool = False,
-        dry_run: bool = False
+        **kwargs
     ):
         if not file:
             return None
@@ -154,20 +153,22 @@ class Environment:
                         break
                 name = basepath
                 file = b"".join(file)
-            elif archive_match:
-                file = archive_match.group(1)
+            elif archive_match or file.startswith('CAB-'):
+                if archive_match:
+                    file = archive_match.group(1)
                 result = self.get_cab(file)
                 if result:
                     return result
                 efile = self.GLOBAL_FILE_MAP.get(simplify_name(file), None)
-                if not efile:
+                if not efile or not os.path.isfile(efile):
                     return None
                 else:
                     typ, reader = ImportHelper.check_file_type(efile)
                     if typ == FileType.BundleFile:
                         f = ImportHelper.parse_file(
                                 reader, self, name=file, typ=typ,
-                                is_dependency=True, dump=dump, dry_run=dry_run
+                                is_dependency=True,
+                                **kwargs
                             )
                         if f and f.files and isinstance(f.files[file], (SerializedFile, EndianBinaryReader)):
                             self.register_cab(file, f.files[file])
@@ -199,7 +200,7 @@ class Environment:
         else:
             f = ImportHelper.parse_file(
                     reader, self, name=stream_name, typ=typ,
-                    is_dependency=is_dependency, dump=dump, dry_run=dry_run
+                    is_dependency=is_dependency, **kwargs
                 )
         if f:
             if isinstance(f, (SerializedFile, EndianBinaryReader)):
@@ -370,7 +371,7 @@ class Environment:
         for cab in list(self.cabs.keys()):
             self.unregister_cab(cab)
         self.cabs = {}
-    
+
     def unregister_cab(self, name: str):
         """
         Removes a cab from internal listing.

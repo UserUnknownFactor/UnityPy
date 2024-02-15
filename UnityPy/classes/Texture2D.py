@@ -26,7 +26,13 @@ class Texture2D(Texture):
             or isinstance(img, IOBase)
         ):
             img = Image.open(img)
-
+        bad_width = img.width != self.m_Width
+        bad_height = img.height != self.m_Height
+        if bad_width or bad_height:
+            print(f"Image must have the same dimensions as Texture2D " + (
+                f"{img.width} != {self.m_Width}" if bad_width else "") + (
+                f"{img.height} != {self.m_Height}" if bad_height else ""))
+            return
         img_data, tex_format = Texture2DConverter.image_to_texture2d(
             img, self.m_TextureFormat
         )

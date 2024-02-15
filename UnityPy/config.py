@@ -17,6 +17,8 @@ DEBUG = True # Toggles debugging branches
 
 DEBUG_TYPETREES = False # Toggles debugging branches in ObjectReader and TypeTreeHelper
 
+WARNED_NOTFOUND_ONCE = True
+
 # INFO: internal
 # GLOBAL WARNING SUPPRESSION
 FALLBACK_VERSION_WARNED = False  # for FALLBACK_UNITY_VERSION
