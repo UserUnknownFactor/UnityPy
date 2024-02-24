@@ -10,9 +10,9 @@ class EndianBinaryWriter:
     endian: str
     Length: int
     Position: int
-    Encryption: Callable
+    Crypto: Callable
 
-    def __init__(self, input_=b"", endian=">", offset=None, encrypt_func=None):
+    def __init__(self, input_=b"", endian=">", offset=None, crypto_func=None):
         if isinstance(input_, (bytes, bytearray)):
             self.stream = BytesIO(input_)
             self.stream.seek(0, 2)
@@ -21,16 +21,18 @@ class EndianBinaryWriter:
         else:
             raise ValueError("Invalid input type - %s." % type(input_))
         self.endian = endian
-        self.Encryption = encrypt_func
+        self.Crypto = crypto_func
         if offset is None:
             self.Position = self.stream.tell()
         else:
             self.Position = offset
 
-    @property
-    def bytes(self):
+    def save(self):
         self.stream.seek(0)
         return self.stream.read()
+
+    def read_bytes(self, size = None):
+        return self.stream.read(size)
 
     @property
     def Length(self) -> int:
@@ -44,15 +46,21 @@ class EndianBinaryWriter:
         self.stream.close()
         pass
 
+    def get_position(self):
+        return self.stream.tell()
+
+    def set_position(self, value):
+        if value != self.get_position():
+            self.stream.seek(value)
+
+    Position = property(get_position, set_position)
+
     def write(self, *args):
-        if self.Position != self.stream.tell():
-            self.stream.seek(self.Position)
         ret = 0
-        if self.Encryption is not None:
-            ret = self.stream.write(self.Encryption(args[0], self.Position), *args[1:])
+        if self.Crypto is not None:
+            ret = self.stream.write(self.Crypto(args[0], self.Position), *args[1:])
         else:
             ret = self.stream.write(*args)
-        self.Position = self.stream.tell()
         return ret
 
     def write_byte(self, value: int):
@@ -110,7 +118,7 @@ class EndianBinaryWriter:
     def align_stream(self, alignment=4):
         pos = self.stream.tell()
         align = (alignment - pos % alignment) % alignment
-        self.write(b"\0" * align)
+        self.write(b'\0' * align)
 
     def write_quaternion(self, value: Quaternion):
         self.write_float(value.X)

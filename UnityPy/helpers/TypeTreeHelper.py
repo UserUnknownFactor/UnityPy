@@ -1,71 +1,22 @@
-﻿from typing import Any, Dict, List, Union, Iterable, Tuple
-from ..streams import EndianBinaryReader, EndianBinaryWriter
+﻿from typing import Any, List, Union, TYPE_CHECKING
 from ctypes import c_uint32
-import tabulate
-import base64
+#import base64
+from ast import literal_eval
+
+if TYPE_CHECKING:
+    from ..files import ObjectReader
+    from ..streams import EndianBinaryReader
+from ..streams import EndianBinaryWriter
 from ..exceptions import TypeTreeError as TypeTreeError
+from ..enums import ClassIDType
+from ..exceptions import sanity_check
 from .. import config
-
-kAlignBytes = 0x4000
-
-class TypeTreeNode(object):
-    __slots__ = (
-        "m_Type",
-        "m_Name",
-        "m_Level",
-        "m_MetaFlag",
-        # NOTE: unused parameters next
-        "m_ByteSize",
-        "m_Index",
-        "m_Version",
-        #"m_TypeFlags",
-        #"m_TypeStrOffset",
-        #"m_NameStrOffset",
-        #"m_RefTypeHash",
-        #"m_VariableCount",
-    )
-    m_Type: str
-    m_Name: str
-    m_Level: int
-    m_MetaFlag: int
-    m_ByteSize: int
-    m_Index: int
-    m_Version: int
-    #m_TypeStrOffset: int
-    #m_NameStrOffset: int
-    #m_RefTypeHash: str
-    #m_TypeFlags: int
-    #m_VariableCount: int
-
-    def __init__(self, data: Union[dict, Iterable[Tuple]] = None, **kwargs):
-        self.m_Level = None
-        self.m_Type = None
-        self.m_Name = None
-        self.m_MetaFlag = None
-
-        if isinstance(data, dict) and len(data) > 0:
-            items = data.items()
-        elif kwargs:
-            items = kwargs.items()
-        else:
-            items = data
-
-        if items:
-            for key, val in items:
-                setattr(self, key, val)
-
-        if (self.m_Level is None or self.m_Type is None or self.m_Name is None):
-            raise ValueError("TypeTreeNode must have level, name and type")
-
-    def __repr__(self):
-        return f"<TypeTreeNode({self.m_Level} {self.m_Type} {self.m_Name})>"
-
+from .TypeTreeNode import TypeTreeNode, kAlignBytes
 
 try:
     from ..UnityPyBoost import TypeTreeNode, read_typetree as read_typetree_c
 except:
     read_typetree_c = None
-
 
 def node_dict_to_node_cls(nodes: List[dict]) -> List[TypeTreeNode]:
     """Converts all dict-type nodes into TypeTreeNodes
@@ -116,13 +67,15 @@ def check_nodes(nodes: List[Union[dict, TypeTreeNode]]) -> List[TypeTreeNode]:
         elif isinstance(nodes[0], dict):
             return node_dict_to_node_cls(nodes)
     raise ValueError(
-        f"nodes must be a list of dict or TypeTreeNode elements, but received {type(nodes)} - {type(nodes[0]) if isinstance(nodes, list) else ''}"
+        "nodes must be a list of dict or TypeTreeNode elements, but received " +
+        f"{type(nodes)} - {type(nodes[0]) if isinstance(nodes, list) else ''}"
     )
 
 
 def slice_len(s):
     step = s.step if s.step else 1
     return max((s.stop - s.start) // step, 1)
+
 
 def get_nodes(nodes: List[TypeTreeNode], index: int) -> list:
     """Copies all nodes above the level of the node at the set index.
@@ -148,9 +101,17 @@ def get_nodes(nodes: List[TypeTreeNode], index: int) -> list:
 
 def get_subtree_at(nodes: List[TypeTreeNode], index: c_uint32) -> slice:
     """Copies all nodes with the level above the one of the node at the set index.
+    Parameters
+    ----------
+    nodes : list
+        nodes/nodes of the typetree
+    index : int
+        index of the node
 
+    Returns
+    -------
     slice
-        A slice of nodes
+         A slice of nodes
     """
     i = index.value
     level = nodes[i].m_Level
@@ -165,20 +126,26 @@ def get_subtree_at(nodes: List[TypeTreeNode], index: c_uint32) -> slice:
         subtree = slice(index.value, min(i, len_nodes))
     return subtree
 
+def read_typetree_safe(nodes: List[Union[dict, TypeTreeNode]],
+                       reader: Union["ObjectReader", "EndianBinaryReader"], all_trees: dict=None,
+                       pos: c_uint32=None) -> dict:
+    """Safely reads TypeTree of Object using its provided nodes from the reader."""
+    try:
+        return read_typetree(nodes, reader, all_trees, pos)
+    except:
+        return None
 
-def read_typetree(
-    nodes: List[Union[dict, TypeTreeNode]],
-    reader: EndianBinaryReader,
-    all_trees: dict=None,
-    pos: c_uint32=None
-) -> dict:
-    """Reads the typetree of the object contained in the reader via the node list.
+
+def read_typetree(nodes: List[Union[dict, TypeTreeNode]],
+                  reader: "ObjectReader",
+                  all_trees: dict=None, pos: c_uint32=None) -> dict:
+    """Reads TypeTree of Object using its provided nodes from the reader.
 
     Parameters
     ----------
     nodes : list
         List of nodes/nodes
-    reader : EndianBinaryReader
+    reader : Union["ObjectReader", "EndianBinaryReader"]
         Reader of the object to be parsed
 
     Returns
@@ -200,43 +167,28 @@ def read_typetree(
 
     while i.value < len(nodes):
         node = nodes[i.value]
-        try:
-            val = read_value(nodes, reader, i, all_trees)
-        except EOFError as e:
-            idobj = obj.get("m_GameObject", "")
-            try:
-                if idobj: idobj = " " + str(idobj)
-            except:
-                pass
-            raise TypeTreeError(
-                f"Error reading object{idobj}: TypeTreeNode<{node.m_Name}> specifies more bytes than the object size"
-                #+f"\n{json.dumps(debug_data, indent=4)}"
-                ,obj
-            )
-
+        val = read_value(nodes, reader, i, all_trees)
         obj[node.m_Name] = val
         i.value += 1
 
-        val = None
-        node = None
-
-    _read = reader.Position - reader.byte_start
-    if _read != reader.byte_size:
+    difference =  reader.byte_size - reader.already_read
+    if difference != 0:
         idobj = obj.get("m_GameObject", "")
         try:
             if idobj: idobj = " " + str(idobj)
         except:
             pass
         raise TypeTreeError(
-            f"Error reading object{idobj}: {nodes[0]} specifies {_read} bytes, but object size is {reader.byte_size} bytes"
-            #+f"\n{json.dumps(debug_data, indent=4)}"
+            f"object's <{nodes[0].m_Type}> TypeTree specifies {reader.already_read},"+
+            f" but object is {reader.byte_size} bytes (diff: {difference} B)"
+            #+f"\n{json.dumps(obj, indent=4)}"
             ,obj
         )
-
     return obj
 
-def read_common_type(_type, reader):
-    match _type:
+
+def read_common_type(value_type, reader: Union["ObjectReader", "EndianBinaryReader"]):
+    match value_type:
         case "SInt8" | "sbyte":
             return reader.read_byte()
         case "UInt8" | "char" | "ubyte":
@@ -262,7 +214,9 @@ def read_common_type(_type, reader):
         case _:
             return None
 
-def read_value(nodes: List[TypeTreeNode], reader: EndianBinaryReader, i: c_uint32, all_trees:dict):
+
+def read_value(nodes: List[TypeTreeNode], reader: "ObjectReader",
+               i: c_uint32, all_trees:dict, value_ref=None):
     node = nodes[i.value]
     _type = node.m_Type
     _name = node.m_Name
@@ -275,14 +229,15 @@ def read_value(nodes: List[TypeTreeNode], reader: EndianBinaryReader, i: c_uint3
     if value is None:
         match _type:
             case _type if _type.startswith("PPtr<"):
-                # accelerate pointers read
-                value = {"m_FileID": reader.read_int(), "m_PathID": reader.read_long()}
+                fid = reader.read_int()
+                pid = read_common_type(nodes[i.value + 2].m_Type, reader) # old ver compat
+                value = {"m_FileID": fid, "m_PathID": pid}
                 i.value += 2
             case "String[]":
                 if (nodes[i.value + 1].m_MetaFlag & kAlignBytes) != 0:
                     align = True
                 size_array = reader.read_int()
-                assert_realistic_size(reader.Length, size_array, nodes, _type, _name)
+                sanity_check(f"read_value(): size_array of String[]", size_array)
                 value = [None] * size_array
                 for s in range(size_array):
                     value[s] = reader.read_aligned_string()
@@ -298,24 +253,30 @@ def read_value(nodes: List[TypeTreeNode], reader: EndianBinaryReader, i: c_uint3
                 first = get_subtree_at(nodes[map_], c_uint32(4))
                 second = get_subtree_at(nodes[map_], c_uint32(4 + slice_len(first)))
                 size = reader.read_int()
-                assert_realistic_size(reader.Length, size, nodes, _type, _name)
+                sanity_check(f"read_value(): size of map", size)
                 value = [None] * size
                 for j in range(size):
-                    key = read_value(nodes[first], reader, c_uint32(0), all_trees)
-                    data = read_value(nodes[second], reader, c_uint32(0), all_trees)
+                    key = read_value(nodes[first], reader, c_uint32(0), all_trees, value_ref)
+                    data = read_value(nodes[second], reader, c_uint32(0), all_trees, value_ref)
                     value[j] = (key, data)
             case "TypelessData":
                 size = reader.read_int()
-                assert_realistic_size(reader.Length, size, nodes, _type, _name)
+                sanity_check(f"read_value(): size of TypelessData", size)
                 value = reader.read_bytes(size)
                 i.value += 2  # following by 2 entities: Size, Data(uint8[])
+            case "ManagedReferencesRegistry":
+                registry = get_subtree_at(nodes, i) # just to count nodes
+                value = read_managed_ref_registry(reader, all_trees, value_ref)
+                i.value += slice_len(registry) - 1
             case "UnityPyBinaryBlob":
-                size = None
-                if hasattr(nodes[i.value], "m_ByteSize"):
-                    size = nodes[i.value].m_ByteSize
-                    value = reader.read_bytes(size)
-                else:
-                    value = base64.b64encode(bytes(reader.read_the_rest(reader))).decode('latin1')
+                if config.ENABLE_BINARY_BLOBS:
+                    size = None
+                    if hasattr(nodes[i.value], "m_ByteSize"):
+                        size = nodes[i.value].m_ByteSize
+                        value = repr(bytes(reader.read_bytes(size)).decode('unicode_escape'))[1:-1]
+                    else:
+                        value = repr(bytes(reader.read_the_rest()).decode('unicode_escape'))[1:-1]
+                i.value += 1
             case _:
                 # Vector
                 if i.value < len(nodes) - 1 and nodes[i.value + 1].m_Type == "Array":
@@ -324,31 +285,36 @@ def read_value(nodes: List[TypeTreeNode], reader: EndianBinaryReader, i: c_uint3
                     vector = get_subtree_at(nodes, i)
                     i.value += slice_len(vector) - 1
                     size = reader.read_int()
-                    assert_realistic_size(reader.Length, size, nodes, _type, _name)
-                    value = [read_value(
-                        nodes[vector], reader, c_uint32(3), all_trees
-                    ) for _ in range(size)]
+                    sanity_check(f"read_value(): size of Vector", size)
+                    value = [None] * size
+                    for i in range(size):
+                        value[i] = read_value(nodes[vector], reader, c_uint32(3), all_trees, value_ref)
+                    pass
                 else:  # Class
                     clz = get_subtree_at(nodes, i)
                     slen = slice_len(clz)
                     if slen == 1:
-                        if all_trees and _type in all_trees:
-                            value = read_typetree(all_trees[_type], reader, all_trees, c_uint32(6))
-                            return value
+                        if reader.byte_size - reader.already_read != 0:
+                            if all_trees and _type in all_trees: # an unspecified class present elsewhere
+                                ref_nodes = all_trees[_type]
+                                if ref_nodes and len(ref_nodes) > 1:
+                                    value =  read_value(ref_nodes, reader, c_uint32(0), all_trees, value_ref)
+                                else:
+                                    value = {}
+                            else:
+                                print(f"No type definition for field {nodes[clz][0].m_Name} of type " +
+                                    f"{nodes[clz][0].m_Type}, error in the TypeTree or an empty type")
+                                value = {}
                         else:
-                            raise TypeTreeError(
-                                f"Type definition for class {nodes[clz][0].m_Name} " +
-                                f"of type {nodes[clz][0].m_Type} not found",
-                                nodes
-                            )
-                            #return {}
-                    i.value += slen - 1
-                    value = {}
-                    j = c_uint32(1)
-                    while j.value < slen:
-                        clz_node = nodes[clz.start + j.value]
-                        value[clz_node.m_Name] = read_value(nodes[clz], reader, j, all_trees)
-                        j.value += 1
+                            value = {} # just an empty class
+                    else:
+                        i.value += slen - 1
+                        value = {}
+                        j = c_uint32(1)
+                        while j.value < slen:
+                            clz_node: TypeTreeNode = nodes[clz.start + j.value]
+                            value[clz_node.m_Name] = read_value(nodes[clz], reader, j, all_trees, value_ref)
+                            j.value += 1
 
     if align:
         reader.align_stream()
@@ -360,163 +326,59 @@ def read_value(nodes: List[TypeTreeNode], reader: EndianBinaryReader, i: c_uint3
             value_out = f"{value.__class__.__name__} of length {len(value)}"
         else:
             value_out = value
-        print(f"\"{node.m_Name}\": {value_out} (offset: {pos2} - {pos1} = {pos2 - pos1})")
-
+        print(f"\"{node.m_Name}\": {value_out} (offset: {pos2} - {pos1} = {pos2 - pos1})" +
+              f"\nlast data: {[value[k] for k in value.keys()[-2:]]}" if value else '')
     return value
 
-def assert_realistic_size(max:int, size:int, _nodes:list, _type: str ='', _name:str=''):
-    if size > max: # sanity check
-        raise TypeTreeError(f"Too big of an array in: {_type} {_name}", _nodes)
+
+def read_managed_ref_registry(reader: Union["ObjectReader", "EndianBinaryReader"],
+                              all_trees: dict, value_ref):
+    value = {}
+    version = 2
+    refid_count = 1
+    if value_ref is None:
+        # read version and refid count only at the top level
+        version = reader.read_int()
+        value['version'] = version
+        if version not in [1,2]:
+            raise Exception(f"Unsupported ManagedReferencesRegistry version {version}")
+        refid_count = reader.read_int()
+        sanity_check("refid_count", refid_count)
+        value_ref = True
+    else:
+        return None # no more than one level of nesting
+    value['RefIds'] = []
+    while refid_count > 0:
+        rid = None
+        if version > 1:
+            rid = reader.read_long()
+            #rid_text = f"<rID:{rid}>"
+        ref_class = reader.read_aligned_string()
+        ref_ns = reader.read_aligned_string()
+        ref_asm = reader.read_aligned_string()
+        ref_nodes = None
+        if rid is not None and rid >= 0 and rid < (1 << 32):
+            ref_class = ClassIDType(rid).name
+        if all_trees and ref_class and ref_class in all_trees:
+            ref_nodes = all_trees[ref_class]
+        data = None
+        # rid == -2 and classless nodes can be safely ignored
+        if ref_nodes and (rid != -2 if rid is not None else True):
+            data = read_value(ref_nodes, reader, c_uint32(0), all_trees, value_ref)
+        class_value = {}
+        if rid is not None:
+            class_value |= { "rid": rid }
+        class_value |= {
+            "type": { "class": ref_class, "ns": ref_ns,"asm": ref_asm },
+            "data": data
+        }
+        value['RefIds'].append(class_value)
+        refid_count -= 1
+    return value
 
 
-def read_typetree_str(
-    sb: List[str], nodes: List[Union[dict, TypeTreeNode]], reader: EndianBinaryReader
-) -> list:
-    """Reads the TypeTree of the object contained in the reader via the node list and dumps it as string.
-
-    Parameters
-    ----------
-    sb : list
-        StringBuilder - a list used to build the string dump, should be empty
-    nodes : list
-        List of nodes/nodes
-    reader : EndianBinaryReader
-        Reader of the object to be parsed
-
-    Returns
-    -------
-    list
-        The sb given as input
-    """
-    # reader.reset()
-    nodes = check_nodes(nodes)
-
-    i = c_uint32(0)
-    while i.value < len(nodes):
-        read_value_str(sb, nodes, reader, i)
-        i.value += 1
-
-    readed = reader.Position - reader.byte_start
-    if readed != reader.byte_size:
-        raise TypeTreeError(
-            f"Error while read type, read {readed} bytes but expected {reader.byte_size} bytes",
-            nodes,
-        )
-
-    return sb
-
-
-def read_value_str(
-    sb: List[str], nodes: List[TypeTreeNode], reader: EndianBinaryReader, i: c_uint32
-) -> list:
-    node = nodes[i.value]
-    _type = node.m_Type
-    align = (node.m_MetaFlag & kAlignBytes) != 0
-    append = True
-
-    value = read_common_type(_type, reader)
-    if value is None:
-        match _type:
-            case "string":
-                value = reader.read_aligned_string()
-                i.value += 3  # Array, Size, Data(uint8)
-                append = False
-                sb.append(
-                    '{0}{1} {2} = "{3}"\r\n'.format(
-                        "\t" * node.m_Level, node.m_Type, node.m_Name, value
-                    )
-                )
-            case "map":
-                if (nodes[i.value + 1].meta_flag & kAlignBytes) != 0:
-                    align = True
-                map_ = get_subtree_at(nodes, i)
-                first = get_subtree_at(nodes[map_], c_uint32(4))
-                second = get_subtree_at(nodes[map_], c_uint32(4 + slice_len(first)))
-                size = reader.read_int()
-                append = False
-                sb.append("{0}{1} {2}\r\n".format("\t" * node.m_Level, node.m_Type, node.m_Name))
-                sb.append("{0}{1} {2}\r\n".format("\t" * (node.m_Level + 1), "Array", "Array"))
-                sb.append(
-                    "{0}{1} {2} = {3}\r\n".format("\t" * (node.m_Level + 1), "int", "size", size)
-                )
-                for j in range(size):
-                    sb.append("{0}[{1}]\r\n".format("\t" * (node.m_Level + 2), j))
-                    sb.append("{0}{1} {2}\r\n".format("\t" * (node.m_Level + 2), "pair", "data"))
-                    read_value_str(sb, first, reader, c_uint32(0))
-                    read_value_str(sb, second, reader, c_uint32(0))
-            case "TypelessData":
-                size = reader.read_int()
-                value = reader.read_bytes(size)
-                i.value += 2  # Size, Data(char/uint8)
-                append = False
-                sb.append("{0}{1} {2}\r\n".format("\t" * node.m_Level, node.m_Type, node.m_Name))
-                sb.append("{0}{1} {2} = {3}\r\n".format("\t" * node.m_Level, "int", "size", size))
-                # sb.append("{0}{1} {2} = {3}\r\n".format(
-                #    "\t" * node.m_Level, "UInt8", "data", base64.b64encode(value)))
-            case _:
-                # Vector
-                if i.value < len(nodes) - 1 and nodes[i.value + 1].m_Type == "Array":
-                    if (nodes[i.value + 1].m_MetaFlag & kAlignBytes) != 0:
-                        align = True
-                    vector = get_subtree_at(nodes, i)
-                    i.value += slice_len(vector) - 1
-                    size = reader.read_int()
-                    append = False
-                    sb.append("{0}{1} {2}\r\n".format("\t" * node.m_Level, node.m_Type, node.m_Name))
-                    sb.append(
-                        "{0}{1} {2}\r\n".format("\t" * (node.m_Level + 1), "Array", "Array")
-                    )
-                    sb.append(
-                        "{0}{1} {2} = {3}\r\n".format(
-                            "\t" * (node.m_Level + 1), "int", "size", size
-                        )
-                    )
-                    for j in range(size):
-                        sb.append("{0}[{1}]\r\n".format("\t" * (node.m_Level + 2), j))
-                        read_value_str(sb, nodes[vector], reader, c_uint32(3))
-
-                else:  # Class
-                    clz = get_subtree_at(nodes, i)
-                    i.value += slice_len(clz) - 1
-                    j = c_uint32(1)
-                    append = False
-                    sb.append("{0}{1} {2}\r\n".format("\t" * node.m_Level, node.m_Type, node.n_Name))
-                    while j.value < slice_len(clz):
-                        read_value_str(sb, nodes[clz], reader, j)
-                        j.value += 1
-
-    if append:
-        sb.append(
-            "{0}{1} {2} = {3}\r\n".format(
-                "\t" * node.m_Level, node.m_Type, node.m_Name, value
-            )
-        )
-
-    if align:
-        reader.align_stream()
-    return sb
-
-
-def dump_typetree(nodes: List[TypeTreeNode]) -> str:
-    """Dumps the structure of the given nodes.
-
-    Parameters
-    ----------
-    nodes : list
-        List of nodes/nodes
-
-    Returns
-    -------
-    str
-        The dumped structure
-    """
-    field_names = ["m_Level", "m_Type", "m_Name", "m_MetaFlag"]
-    rows = [[getattr(x, key) for key in field_names] for x in nodes]
-    return tabulate.tabulate(rows, headers=field_names)
-
-
-def write_typetree(
-    obj: dict, nodes: List[Union[dict, TypeTreeNode]], writer: EndianBinaryWriter = None
+def write_typetree(obj: dict, nodes: List[Union[dict, TypeTreeNode]],
+    writer: EndianBinaryWriter = None, all_trees: dict = None
 ) -> EndianBinaryWriter:
     """Writes the data of the object via the given typetree of the object into the writer.
 
@@ -542,19 +404,14 @@ def write_typetree(
     i = c_uint32(1)
     while i.value < len(nodes):
         value = obj[nodes[i.value].m_Name]
-        write_value(value, nodes, writer, i)
+        write_value(value, nodes, writer, i, all_trees)
         i.value += 1
     return writer
 
 
-def write_value(
-    value: Any | str, nodes: List[TypeTreeNode], writer: EndianBinaryWriter, i: c_uint32
-):
-    node = nodes[i.value]
-    _type = node.m_Type
-    align = (node.m_MetaFlag & kAlignBytes) != 0
-
-    match _type:
+def write_common_type(value, value_type: str, writer: EndianBinaryWriter):
+    is_written = True
+    match value_type:
         case "SInt8":
             writer.write_byte(value)
         case "UInt8" | "char":
@@ -577,47 +434,113 @@ def write_value(
             writer.write_double(value)
         case "bool":
             writer.write_boolean(value)
-        case "string":
-            writer.write_aligned_string(value)
-            i.value += 3  # Array, Size, Data(uint8[])
-        case "map":
-            if (nodes[i.value + 1].m_MetaFlag & kAlignBytes) != 0:
-                align = True
-            map_ = get_subtree_at(nodes, i)
-            i.value += len(map_) - 1
-            first = get_subtree_at(nodes[map_], c_uint32(4))
-            second = get_subtree_at(nodes[map_], c_uint32(4 + slice_len(first)))
-            # Size
-            writer.write_int(len(value))
-            # Data
-            for key, val in value:
-                write_value(key, nodes[first], writer, c_uint32(0))
-                write_value(val, nodes[second], writer, c_uint32(0))
-        case "TypelessData":
-            writer.write_int(len(value))
-            writer.write_bytes(value)
-            i.value += 2  # Size, Data(char/uint8)
-        case "UnityPyBinaryBlob":
-            writer.write_bytes(base64.b64decode(value))
-            i.value += 1  # Data(bytes)
         case _:
-            # Vector
-            if i.value < len(nodes) - 1 and nodes[i.value + 1].m_Type == "Array":
+            is_written = False
+    return is_written
+
+
+def write_value(value: Union[Any, int, str], nodes: List[TypeTreeNode],
+                writer: EndianBinaryWriter, i: c_uint32,
+                all_trees: dict = None, value_ref = None
+):
+    node = nodes[i.value]
+    _type = node.m_Type
+    align = (node.m_MetaFlag & kAlignBytes) != 0
+
+    if not write_common_type(value, _type, writer):
+        match _type:
+            case _type if _type.startswith("PPtr<"):
+                # accelerate pointers write
+                writer.write_int(value["m_FileID"])
+                write_common_type(nodes[i.value + 2].m_Type, value["m_PathID"], writer)
+                i.value += 2
+            case "string":
+                writer.write_aligned_string(value)
+                i.value += 3  # Array, Size, Data(uint8[])
+            case "map":
                 if (nodes[i.value + 1].m_MetaFlag & kAlignBytes) != 0:
                     align = True
-                vector = get_subtree_at(nodes, i)
-                i.value += slice_len(vector) - 1
+                map_ = get_subtree_at(nodes, i)
+                i.value += len(map_) - 1
+                first = get_subtree_at(nodes[map_], c_uint32(4))
+                second = get_subtree_at(nodes[map_], c_uint32(4 + slice_len(first)))
+                # Size
                 writer.write_int(len(value))
-                for val in value:
-                    write_value(val, nodes[vector], writer, c_uint32(3))
-            else:  # Class
-                clz = get_subtree_at(nodes, i)
-                i.value += slice_len(clz) - 1
-                j = c_uint32(1)
-                while j.value < slice_len(clz):
-                    val = value[nodes[clz.start + j.value].m_Name]
-                    write_value(val, nodes[clz], writer, j)
-                    j.value += 1
-
+                # Data
+                for key, val in value:
+                    write_value(key, nodes[first], writer, c_uint32(0), all_trees, value_ref)
+                    write_value(val, nodes[second], writer, c_uint32(0), all_trees, value_ref)
+            case "TypelessData":
+                writer.write_int(len(value))
+                writer.write_bytes(value)
+                i.value += 2  # Size, Data(char/uint8)
+            case "ManagedReferencesRegistry":
+                registry = get_subtree_at(nodes, i) # just to count nodes
+                value = write_managed_ref_registry(value, writer, all_trees, value_ref)
+                i.value += slice_len(registry) - 1
+            case "UnityPyBinaryBlob":
+                if config.ENABLE_BINARY_BLOBS:
+                    value = value.replace('"','\\"')
+                    writer.write_bytes(literal_eval(f'b"{value}"'))
+                i.value += 1  # Data(bytes)
+            case _:
+                # Vector
+                if i.value < len(nodes) - 1 and nodes[i.value + 1].m_Type == "Array":
+                    if (nodes[i.value + 1].m_MetaFlag & kAlignBytes) != 0:
+                        align = True
+                    vector = get_subtree_at(nodes, i)
+                    i.value += slice_len(vector) - 1
+                    writer.write_int(len(value))
+                    for val in value:
+                        write_value(val, nodes[vector], writer, c_uint32(3), all_trees, value_ref)
+                else:  # Class
+                    clz = get_subtree_at(nodes, i)
+                    i.value += slice_len(clz) - 1
+                    j = c_uint32(1)
+                    while j.value < slice_len(clz):
+                        val = value[nodes[clz.start + j.value].m_Name]
+                        write_value(val, nodes[clz], writer, j, all_trees, value_ref)
+                        j.value += 1
     if align:
         writer.align_stream()
+
+
+def write_managed_ref_registry(value, writer: EndianBinaryWriter,
+                               all_trees: dict, value_ref):
+    version = 2
+    if value_ref is None:
+        version = value['version']
+        writer.write_int(version)
+        refid_count_pos = writer.Position
+        writer.write_int(len(value['RefIds']))
+        value_ref = True
+    else:
+        return
+    for item in value['RefIds']:
+        rid = None
+        if version > 1:
+            rid = item["rid"]
+            writer.write_long(rid)
+        writer.write_aligned_string(item["type"]["class"])
+        writer.write_aligned_string(item["type"]["ns"])
+        writer.write_aligned_string(item["type"]["asm"])
+        ref_nodes = None
+        ref_class = None
+        if rid is not None and rid >= 0 and rid < (1 << 32):
+            ref_class = ClassIDType(rid).name
+        if all_trees and ref_class and ref_class in all_trees:
+            ref_nodes = all_trees[ref_class]
+        if ref_nodes and (rid != -2 if rid is not None else True):
+            write_value(item["data"], ref_nodes, writer, c_uint32(0), all_trees, value_ref)
+
+
+def dump_typetree(nodes: list, filename:str=None, indent=4) -> Union[str, None]:
+    """Dumps TypeTree as JSON.
+       If filename is provided then dumps to that file instead of returning it."""
+    import json
+    data = json.dumps(nodes, ensure_ascii=False, indent=indent, default=lambda __o: __o.toJSON())
+    if filename:
+        with open(filename, "w", encoding="utf-8") as j:
+            j.write(data)
+    else:
+        return data

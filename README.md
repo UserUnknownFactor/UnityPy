@@ -22,7 +22,7 @@ So far following obj types can be edited:
 
 ## Installation
 
-**Python 3.6.0 or higher is required**
+**Python 3.10.0 or higher is required**
 
 ```cmd
 pip install UnityPy

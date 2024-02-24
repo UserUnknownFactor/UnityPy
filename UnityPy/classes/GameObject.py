@@ -81,4 +81,4 @@ class GameObject(EditorExtension):
             writer.write_u_short(self.m_Tag)
             writer.write_boolean(self.m_IsActive)
         if not intern_call:
-            self.set_raw_data(writer.bytes)
+            self.set_raw_data(writer)

@@ -1,188 +1,32 @@
-﻿import os
-import re
-from struct import Struct
+﻿import os, re
+from typing import Union
 
 from . import File, ObjectReader, BundleFile
-from ..enums import BuildTarget, ClassIDType, CommonString
+from .SerializedType import SerializedType
+from ..enums import BuildTarget, ClassIDType, FileIDType
 from ..streams import EndianBinaryReader, EndianBinaryWriter
-from ..helpers.TypeTreeHelper import TypeTreeNode
-from .. import config
-from .. import classes
+from ..classes import AssetBundle
+from ..helpers.TypeTreeHelper import dump_typetree
+from .. import config, classes
 
-
-class SerializedFileHeader:
-    metadata_size: int
-    file_size: int
-    version: int
-    data_offset: int
-    endian: bytes
-    reserved: bytes
-
-    def __init__(self, reader: EndianBinaryReader):
-        (
-            self.metadata_size,
-            self.file_size,
-            self.version,
-            self.data_offset,
-        ) = reader.read_u_int_array(4)
-
-
-class LocalSerializedObjectIdentifier:  # script type
-    local_serialized_file_index: int
-    local_identifier_in_file: int
-
-    def __init__(self, header: SerializedFileHeader, reader: EndianBinaryReader):
-        self.local_serialized_file_index = reader.read_int()
-        if header.version < 14:
-            self.local_identifier_in_file = reader.read_int()
-        else:
-            reader.align_stream()
-            self.local_identifier_in_file = reader.read_long()
-
-    def write(self, header: SerializedFileHeader, writer: EndianBinaryWriter):
-        writer.write_int(self.local_serialized_file_index)
-        if header.version < 14:
-            writer.write_int(self.local_identifier_in_file)
-        else:
-            writer.align_stream()
-            writer.write_long(self.local_identifier_in_file)
-
-
-class FileIdentifier:  # external
-    guid: bytes
-    type: int
-    # enum { kNonAssetType = 0, kDeprecatedCachedAssetType = 1, kSerializedAssetType = 2, kMetaAssetType = 3 };
-    path: str
-
-    @property
-    def name(self):
-        return os.path.basename(self.path)
-
-    def __repr__(self):
-        return f"<{self.__class__.__name__}({self.path})>"
-
-    def __init__(self, header: SerializedFileHeader, reader: EndianBinaryReader):
-        if header.version >= 6:
-            self.temp_empty = reader.read_string_to_null()
-        if header.version >= 5:
-            self.guid = reader.read_bytes(16)
-            self.type = reader.read_int()
-        self.path = reader.read_string_to_null()
-
-    def write(self, header: SerializedFileHeader, writer: EndianBinaryWriter):
-        if header.version >= 6:
-            writer.write_string_to_null(self.temp_empty)
-        if header.version >= 5:
-            writer.write_bytes(self.guid)
-            writer.write_int(self.type)
-        writer.write_string_to_null(self.path)
-
-
-class BuildType:
-    build_type: str
-
-    def __init__(self, build_type):
-        self.build_type = build_type
-
-    @property
-    def IsAlpha(self):
-        return self.build_type == "a"
-
-    @property
-    def IsPatch(self):
-        return self.build_type == "p"
-
-
-class SerializedType:
-    class_id: int
-    is_stripped_type: bool
-    script_type_index = -1
-    nodes: list = []  # TypeTreeNode
-    script_id: bytes  # Hash128
-    old_type_hash: bytes  # Hash128}
-
-    def __init__(self, reader, serialized_file, is_ref_type: bool):
-        version = serialized_file.header.version
-        self.class_id = reader.read_int()
-
-        if version >= 16:
-            self.is_stripped_type = reader.read_boolean()
-
-        if version >= 17:
-            self.script_type_index = reader.read_short()
-
-        if version >= 13:
-            if (
-                (is_ref_type and self.script_type_index >= 0)
-                or (version < 16 and self.class_id < 0)
-                or (version >= 16 and self.class_id == 114)
-            ):
-                self.script_id = reader.read_bytes(16)
-            self.old_type_hash = reader.read_bytes(16)
-
-        if serialized_file._enable_type_tree:
-            if version >= 12 or version == 10:
-                self.nodes, self.string_data = serialized_file.read_type_tree_blob()
-            else:
-                self.nodes = serialized_file.read_type_tree()
-
-            if version >= 21:
-                if is_ref_type:
-                    self.m_ClassName = reader.read_string_to_null()
-                    self.m_NameSpace = reader.read_string_to_null()
-                    self.m_AssemblyName = reader.read_string_to_null()
-                else:
-                    self.type_dependencies = reader.read_int_array()
-
-    def write(self, serialized_file, writer, is_ref_type):
-        version = serialized_file.header.version
-        writer.write_int(self.class_id)
-
-        if version >= 16:
-            writer.write_boolean(self.is_stripped_type)
-
-        if version >= 17:
-            writer.write_short(self.script_type_index)
-
-        if version >= 13:
-            if (
-                (is_ref_type and self.script_type_index >= 0)
-                or (version < 16 and self.class_id < 0)
-                or (version >= 16 and self.class_id == 114)
-            ):
-                writer.write_bytes(self.script_id)  # Hash128
-            writer.write_bytes(self.old_type_hash)  # Hash128
-
-        if serialized_file._enable_type_tree:
-            if version >= 12 or version == 10:
-                serialized_file.save_type_tree5(self.nodes, writer, self.string_data)
-            else:
-                serialized_file.save_type_tree(self.nodes, writer)
-
-            if version >= 21:
-                if is_ref_type:
-                    writer.write_string_to_null(self.m_ClassName)
-                    writer.write_string_to_null(self.m_NameSpace)
-                    writer.write_string_to_null(self.m_AssemblyName)
-                else:
-                    writer.write_int_array(self.type_dependencies, True)
-
+UNITY_ZERO = "0.0.0"
 
 class SerializedFile(File.File):
     reader: EndianBinaryReader
     is_changed: bool
     unity_version: str
     version: tuple
-    build_type: BuildType
+    build_type: "BuildType"
     target_platform: BuildTarget
-    types: list
+    serialized_types: list[SerializedType]
+    reference_types: list[SerializedType]
     script_types: list
     externals: list
     objects: dict
     _cache: dict
     assetbundle: "AssetBundle"
     container: "ContainerHelper"
-    header: SerializedFileHeader
+    header: "SerializedFileHeader"
 
     @property
     def files(self):
@@ -198,12 +42,14 @@ class SerializedFile(File.File):
         super().__init__(parent=parent, name=name, **kwargs)
         self.reader = reader
 
-        self.unity_version = "2.5.0f5"
+        self.unity_version = UNITY_ZERO
         self.version = (0, 0, 0, 0)
         self.build_type = BuildType("")
         self.target_platform = BuildTarget.UnknownPlatform
-        self._enable_type_tree = False
-        self.types = []
+        self.type_trees_saved = False
+        self._use_type_trees = True
+        self.serialized_types = []
+        self.reference_types = []
         self.script_types = []
         self.externals = []
         self.objects = {}
@@ -213,13 +59,20 @@ class SerializedFile(File.File):
         # used by: Sprite (Texture2D (with alpha) cached),
         self._cache = {}
         self.unknown = 0
+        self.assetbundle = None
+        self._container = ContainerHelper([])
+        self._type_trees_cache = None
 
         # ReadHeader
         header = SerializedFileHeader(reader)
         self.header = header
 
+        if config.SERIALIZED_FILE_PARSE_TYPETREE is False:
+            self._use_type_trees = False
+
         if header.version >= 9:
-            header.endian = ">" if reader.read_boolean() else "<"
+            is_endian = reader.read_boolean()
+            header.endian = ">" if is_endian else "<"
             header.reserved = reader.read_bytes(3)
             if header.version >= 22:
                 header.metadata_size = reader.read_u_int()
@@ -241,17 +94,19 @@ class SerializedFile(File.File):
             self.target_platform = BuildTarget(self._m_target_platform)
 
         if header.version >= 13:
-            self._enable_type_tree = reader.read_boolean()
+            self.type_trees_saved = reader.read_boolean()
 
-        # ReadTypes
+        # Read Types
         type_count = reader.read_int()
-        self.types = [SerializedType(reader, self, False) for _ in range(type_count)]
+        self.serialized_types = [None] * type_count
+        for i in range(type_count): # for debugging
+            self.serialized_types[i] = SerializedType(reader, self, False)
 
         self.big_id_enabled = 0
         if 7 <= header.version < 14:
             self.big_id_enabled = reader.read_int()
 
-        # ReadObjects
+        # Read Objects
         object_count = reader.read_int()
         self.objects = {}
         for _ in range(object_count):
@@ -272,19 +127,21 @@ class SerializedFile(File.File):
             FileIdentifier(header, reader) for _ in range(externals_count)
         ]
 
+        # Read Reference Types
         if header.version >= 20:
             ref_type_count = reader.read_int()
-            self.ref_types = [
+            self.reference_types = [
                 SerializedType(reader, self, True) for _ in range(ref_type_count)
             ]
-
-        if config.SERIALIZED_FILE_PARSE_TYPETREE is False:
-            self._enable_type_tree = False
 
         if header.version >= 5:
             self.userInformation = reader.read_string_to_null()
 
         # read the asset_bundles to get the containers
+        self.get_containers()
+        pass
+
+    def get_containers(self):
         for obj in self.objects.values():
             if obj.type == ClassIDType.AssetBundle:
                 try:
@@ -328,95 +185,38 @@ class SerializedFile(File.File):
                 continue
             self.environment.load_file(dependency, True)
 
+    def get_ref_typetrees(self, append_ns: bool=False) -> dict:
+        return {v.m_NameSpace + '.' + v.m_ClassName if append_ns else v.m_ClassName: v.nodes for v in self.reference_types}
+
+    def get_all_typetrees(self, append_ns: bool=False) -> dict:
+        if self._type_trees_cache is not None: # since we can call it often
+            return self._type_trees_cache
+        self._type_trees_cache = dict()
+        for i, obj_type in enumerate(self.serialized_types):
+            name = obj_type.nodes[0].m_Type if len(obj_type.nodes) and (
+                obj_type.class_id != ClassIDType.MonoBehaviour) else str(i)
+            self._type_trees_cache[name] = obj_type.nodes
+        self._type_trees_cache |= self.get_ref_typetrees(append_ns)
+        return self._type_trees_cache
+
+    def get_json_typetrees(self, file_name: str=None) -> Union[str, None]:
+        return dump_typetree(self.get_typetrees(), file_name)
+
     def set_version(self, string_version):
         #if 'XD' in string_version:
             #string_version = string_version[0: string_version.find('XD')]
         self.unity_version = string_version
-        if not string_version or string_version == "0.0.0":
+        if not string_version or string_version == UNITY_ZERO:
             # weird case, but apparently can happen?
             # check "cant read Texture2D by 2020.3.13 f1 AssetBundle #77" for details
             if isinstance(self.parent, BundleFile.BundleFile):
                 string_version = self.parent.version_engine
-            if not string_version or string_version == "0.0.0":
+            if not string_version or string_version == UNITY_ZERO:
                 string_version = config.get_fallback_version()
         build_type = re.findall(r"([^\d.])", string_version)
         self.build_type = BuildType(build_type[0] if build_type else "")
         version_split = re.split(r"\D", string_version)
         self.version = tuple(int(x) for x in version_split[:4])
-
-    def read_type_tree(self):
-        type_tree = []
-        level_stack = [[0, 1]]
-        while level_stack:
-            level, count = level_stack[-1]
-            if count == 1:
-                level_stack.pop()
-            else:
-                level_stack[-1][1] -= 1
-
-            type_tree_node = TypeTreeNode(
-                m_Level=level,
-                m_Type=self.reader.read_string_to_null(),
-                m_Name=self.reader.read_string_to_null(),
-                m_ByteSize=self.reader.read_int(),
-            )
-
-            type_tree.append(type_tree_node)
-            if self.header.version == 2:
-                type_tree_node.m_VariableCount = self.reader.read_int()
-
-            if self.header.version != 3:
-                type_tree_node.m_Index = self.reader.read_int()
-
-            type_tree_node.m_TypeFlags = self.reader.read_int()
-            type_tree_node.m_Version = self.reader.read_int()
-            if self.header.version != 3:
-                type_tree_node.m_MetaFlag = self.reader.read_int()
-
-            children_count = self.reader.read_int()
-            if children_count:
-                level_stack.append([level + 1, children_count])
-        return type_tree
-
-    def read_type_tree_blob(self):
-        reader = self.reader
-        number_of_nodes = self.reader.read_u_int()
-        string_buffer_size = self.reader.read_u_int()
-
-        ttype = f"{reader.endian}hBBIIiii"
-        tkeys = [
-            "m_Version",
-            "m_Level",
-            "m_TypeFlags",
-            "m_TypeStrOffset",
-            "m_NameStrOffset",
-            "m_ByteSize",
-            "m_Index",
-            "m_MetaFlag",
-        ]
-        if self.header.version >= 19:
-            ttype += "Q"
-            tkeys.append("m_RefTypeHash")
-
-        node_struct = Struct(ttype)
-        struct_data = reader.read(node_struct.size * number_of_nodes)
-        string_buffer_reader = EndianBinaryReader(
-            reader.read(string_buffer_size), reader.endian
-        )
-
-        if not config.SERIALIZED_FILE_PARSE_TYPETREE:
-            return [], string_buffer_reader.bytes
-
-        type_tree = [
-            TypeTreeNode(
-                **dict(zip(tkeys, raw_node)),
-                m_Type = read_string(string_buffer_reader, raw_node[3]),
-                m_Name = read_string(string_buffer_reader, raw_node[4]),
-            )
-            for i, raw_node in enumerate(node_struct.iter_unpack(struct_data))
-        ]
-
-        return type_tree, string_buffer_reader.bytes
 
     def get_writeable_cab(self, name: str = None):
         """
@@ -448,62 +248,65 @@ class SerializedFile(File.File):
         return cab
 
     def save(self,
-            packer: str = None,
-            writer = None,
-            meta_writer = None,
-            data_writer = None) -> bytes:
+            packer: str = None, writer = None,
+            meta_writer = None, objects_writer = None,
+            **kwargs) -> bytes:
 
         # 1. header -> has to be delayed until the very end
         # 2. data -> types, objects, scripts, ...
+        # so we write the data first
 
-        # so write the data first
+        own_meta_writer = False
+        own_data_writer = False
         if writer is None:
             writer = EndianBinaryWriter()
         if meta_writer is None:
             meta_writer = EndianBinaryWriter()
-        if data_writer is None:
-            data_writer = EndianBinaryWriter()
+            own_meta_writer = True
+        if objects_writer is None:
+            objects_writer = EndianBinaryWriter()
+            own_data_writer = True
 
         header = self.header
         meta_writer.endian = header.endian
-        data_writer.endian = header.endian
+        objects_writer.endian = header.endian
 
         if header.version >= 7:
             meta_writer.write_string_to_null(self.unity_version)
         if header.version >= 8:
             meta_writer.write_int(self._m_target_platform)
         if header.version >= 13:
-            meta_writer.write_boolean(self._enable_type_tree)
+            meta_writer.write_boolean(self.type_trees_saved)
 
-        # ReadTypes
-        meta_writer.write_int(len(self.types))
-        for typ in self.types:
-            typ.write(self, meta_writer, False)
+        # Save Types
+        meta_writer.write_int(len(self.serialized_types))
+        for ser_type in self.serialized_types:
+            ser_type.save(meta_writer)
 
         if 7 <= header.version < 14:
             meta_writer.write_int(self.big_id_enabled)
 
-        # ReadObjects
+        # Save Objects
         meta_writer.write_int(len(self.objects))
         for obj in self.objects.values():
-            obj.write(header, meta_writer, data_writer)
-            data_writer.align_stream(8)
+            obj.write(header, meta_writer, objects_writer)
+            objects_writer.align_stream(8)
 
-        # Read Scripts
+        # Save  Scripts
         if header.version >= 11:
             meta_writer.write_int(len(self.script_types))
             for script_type in self.script_types:
                 script_type.write(header, meta_writer)
 
-        # Read Externals
+        # Save  Externals
         meta_writer.write_int(len(self.externals))
         for external in self.externals:
             external.write(header, meta_writer)
 
         if header.version >= 20:
-            meta_writer.write_int(len(self.ref_types))
-            for ref_type in self.ref_types:
-                ref_type.write(self, meta_writer, True)
+            meta_writer.write_int(len(self.reference_types))
+            for ref_type in self.reference_types:
+                ref_type.save(meta_writer)
 
         if header.version >= 5:
             meta_writer.write_string_to_null(self.userInformation)
@@ -511,14 +314,14 @@ class SerializedFile(File.File):
         # prepare header
         header_size = 16  # 4*4
         metadata_size = meta_writer.Length
-        data_size = data_writer.Length
+        objects_size = objects_writer.Length
         if header.version >= 9:
             # 1 bool + 3 reserved + extra header 4 + 3*8
             header_size += 4 if header.version < 22 else 4 + 28
             data_offset = header_size + metadata_size
             # align data_offset
             data_offset += (16 - data_offset % 16) % 16
-            file_size = data_offset + data_size
+            file_size = data_offset + objects_size
             if header.version < 22:
                 writer.write_u_int(metadata_size)
                 writer.write_u_int(file_size)
@@ -541,131 +344,29 @@ class SerializedFile(File.File):
                 writer.write_long(data_offset)
                 writer.write_long(self.unknown)
 
-            writer.write_bytes(meta_writer.bytes)
+            writer.write_bytes(meta_writer.save())
+            if own_meta_writer:
+                meta_writer.close()
+
             writer.align_stream(16)
-            writer.write_bytes(data_writer.bytes)
+            writer.write_bytes(objects_writer.save())
+            if own_data_writer:
+                objects_writer.close()
 
         else:
             metadata_size += 1  # endian boolean
-            file_size = header_size + metadata_size + data_size
+            file_size = header_size + metadata_size + objects_size
             writer.write_u_int(metadata_size)
             writer.write_u_int(file_size)
             writer.write_u_int(header.version)
             # reader.Position = header.file_size - header.metadata_size
-            # so data follows right after this header -> after 32
-            writer.write_u_int(32)
-            writer.write_bytes(data_writer.bytes)
+            # so data follows right after this header -> after 32 (0x20)
+            writer.write_u_int(0x20)
+            writer.write_bytes(objects_writer.save())
             writer.write_boolean(">" == header.endian)
-            writer.write_bytes(meta_writer.bytes)
+            writer.write_bytes(meta_writer.save())
 
-        return writer.bytes
-
-    def save_serialized_type(
-        self,
-        typ: SerializedType,
-        header: SerializedFileHeader,
-        writer: EndianBinaryWriter,
-    ):
-        writer.write_int(typ.class_id)
-
-        if header.version >= 16:
-            writer.write_boolean(typ.is_stripped_type)
-
-        if header.version >= 17:
-            writer.write_short(typ.script_type_index)
-
-        if header.version >= 13:
-            if (header.version < 16 and typ.class_id < 0) or (
-                header.version >= 16 and typ.class_id == 114
-            ):
-                writer.write_bytes(typ.script_id)  # Hash128
-            writer.write_bytes(typ.old_type_hash)  # Hash128
-
-        if self._enable_type_tree:
-            if header.version >= 12 or header.version == 10:
-                self.save_type_tree5(typ.nodes, writer, typ.string_data)
-            else:
-                self.save_type_tree(typ.nodes, writer)
-
-    def save_type_tree(self, nodes: list, writer: EndianBinaryWriter):
-        for i, node in nodes:
-            writer.write_string_to_null(node.m_Type)
-            writer.write_string_to_null(node.m_Name)
-            writer.write_int(node.byte_size)
-            if self.header.version == 2:
-                writer.write_int(node.m_VariableCount)
-
-            if self.header.version != 3:
-                writer.write_int(node.m_Index)
-
-            writer.write_int(node.m_TypeFlags)
-            writer.write_int(node.m_Version)
-            if self.header.version != 3:
-                writer.write_int(node.m_MetaFlag)
-
-            # calc children count
-            children_count = 0
-            for node2 in nodes[i + 1 :]:
-                if node2.m_Level == node.m_Level:
-                    break
-                if node2.m_Level == node.m_Level - 1:
-                    children_count += 1
-            writer.write_int(children_count)
-
-    def save_type_tree5(self, nodes: list, writer: EndianBinaryWriter, str_data=b""):
-        # node count
-        # stream buffer size
-        # node data
-        # string buffer
-
-        string_buffer = EndianBinaryWriter()
-        string_buffer.write(str_data)
-        strings_values = [
-            (node.m_TypeStrOffset, node.m_NameStrOffset) for node in nodes
-        ]
-
-        # number of nodes
-        writer.write_u_int(len(nodes))
-        # string buffer size
-        writer.write_u_int(string_buffer.Length)
-
-        # nodes
-        for i, node in enumerate(nodes):
-            # version
-            writer.write_u_short(node.m_Version)
-            # level
-            writer.write_byte(node.m_Level)
-            # is array
-            writer.write_u_byte(node.m_TypeFlags)
-            # type str offfset
-            writer.write_u_int(strings_values[i][0])
-            # name str offset
-            writer.write_u_int(strings_values[i][1])
-            # byte size
-            writer.write_int(node.m_ByteSize)
-            # index
-            writer.write_int(node.m_Index)
-            # meta flag
-            writer.write_int(node.m_MetaFlag)
-            # ref hash
-            if self.header.version > 19:
-                writer.write_u_long(node.m_RefTypeHash)
-
-        # string buffer
-        writer.write(string_buffer.bytes)
-        if self.header.version >= 21:
-            #writer.align_stream() # TOFIX: maybe align stream?
-            writer.write_bytes(b"\0" * 4)
-
-
-def read_string(string_buffer_reader: EndianBinaryReader, value: int) -> str:
-    is_offset = (value & 0x80000000) == 0
-    if is_offset:
-        string_buffer_reader.Position = value
-        return string_buffer_reader.read_string_to_null()
-
-    offset = value & 0x7FFFFFFF
-    return CommonString.get(offset, str(offset))
+        return writer.save()
 
 
 class ContainerHelper:
@@ -695,10 +396,10 @@ class ContainerHelper:
         return None
 
     def __setitem__(self, key, value):
-        raise NotImplementedError("Assigning to container is not allowed!")
+        raise NotImplementedError("Assigning to container is impossible")
 
     def __delitem__(self, key):
-        raise NotImplementedError("Deleting from the container is not allowed!")
+        raise NotImplementedError("Deleting from the container is impossible")
 
     def __iter__(self):
         return iter(self.keys())
@@ -717,3 +418,89 @@ class ContainerHelper:
 
     def __dict__(self):
         return self.container_dict
+
+
+class SerializedFileHeader:
+    metadata_size: int
+    file_size: int
+    version: int
+    data_offset: int
+    endian: bytes
+    reserved: bytes
+
+    def __init__(self, reader: EndianBinaryReader):
+        (
+            self.metadata_size,
+            self.file_size,
+            self.version,
+            self.data_offset,
+        ) = reader.read_u_int_array(4)
+
+
+class LocalSerializedObjectIdentifier:  # script type
+    local_serialized_file_index: int
+    local_identifier_in_file: int
+
+    def __init__(self, header: SerializedFileHeader, reader: EndianBinaryReader):
+        self.local_serialized_file_index = reader.read_int()
+        if header.version < 14:
+            self.local_identifier_in_file = reader.read_int()
+        else:
+            reader.align_stream()
+            self.local_identifier_in_file = reader.read_long()
+
+    def write(self, header: SerializedFileHeader, writer: EndianBinaryWriter):
+        writer.write_int(self.local_serialized_file_index)
+        if header.version < 14:
+            writer.write_int(self.local_identifier_in_file)
+        else:
+            writer.align_stream()
+            writer.write_long(self.local_identifier_in_file)
+
+
+class FileIdentifier:  # external
+    guid: bytes
+    type: int
+    path: str
+
+    @property
+    def name(self):
+        return os.path.basename(self.path)
+
+    @property
+    def enum_type(self):
+        return FileIDType(self.type)
+
+    def __repr__(self):
+        return f"<{self.__class__.__name__}({self.path})>"
+
+    def __init__(self, header: SerializedFileHeader, reader: EndianBinaryReader):
+        if header.version >= 6:
+            self.temp_empty = reader.read_string_to_null()
+        if header.version >= 5:
+            self.guid = reader.read_bytes(16)
+            self.type = reader.read_int()
+        self.path = reader.read_string_to_null()
+
+    def write(self, header: SerializedFileHeader, writer: EndianBinaryWriter):
+        if header.version >= 6:
+            writer.write_string_to_null(self.temp_empty)
+        if header.version >= 5:
+            writer.write_bytes(self.guid)
+            writer.write_int(self.type)
+        writer.write_string_to_null(self.path)
+
+
+class BuildType:
+    build_type: str
+
+    def __init__(self, build_type):
+        self.build_type = build_type
+
+    @property
+    def IsAlpha(self):
+        return self.build_type == "a"
+
+    @property
+    def IsPatch(self):
+        return self.build_type == "p"

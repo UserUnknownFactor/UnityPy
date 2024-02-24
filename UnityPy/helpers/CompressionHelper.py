@@ -2,16 +2,33 @@ import gzip
 import lzma
 import struct
 
-import brotli
 import lz4.block
+
+NO_BROTLI= False
+try:
+    import brotli
+except:
+    NO_BROTLI = True
+
+NO_LZHAM = False
+try:
+    import lzham
+    lzham_decompressor = LZHAMDecompressor()
+except:
+    NO_LZHAM = True
 
 GZIP_MAGIC: bytes = b"\x1f\x8b"
 BROTLI_MAGIC: bytes = b"brotli"
 
+def supports_brotli() -> bool:
+    return not NO_BROTLI
+
+def supports_lzham() -> bool:
+    return not NO_LZHAM
 
 # LZMA
 def decompress_lzma(data: bytes) -> bytes:
-    """decompresses lzma-compressed data
+    """Decompresses lzma-compressed data
 
     :param data: compressed data
     :type data: bytes
@@ -40,7 +57,7 @@ def decompress_lzma(data: bytes) -> bytes:
 
 
 def compress_lzma(data: bytes) -> bytes:
-    """compresses data via lzma (unity specific)
+    """Compresses data via lzma (unity specific)
     The current static settings may not be the best solution,
     but they are the most commonly used values and should therefore be enough for the time being.
 
@@ -61,7 +78,7 @@ def compress_lzma(data: bytes) -> bytes:
 
 # LZ4
 def decompress_lz4(data: bytes, uncompressed_size: int) -> bytes:  # LZ4M/LZ4HC
-    """decompresses lz4-compressed data
+    """Decompresses lz4-compressed data
 
     :param data: compressed data
     :type data: bytes
@@ -73,9 +90,18 @@ def decompress_lz4(data: bytes, uncompressed_size: int) -> bytes:  # LZ4M/LZ4HC
     """
     return lz4.block.decompress(data, uncompressed_size)
 
+def compress_lz4(data: bytes) -> bytes:  # LZ4M
+    """Compresses data via lz4.block
 
-def compress_lz4(data: bytes) -> bytes:  # LZ4M/LZ4HC
-    """compresses data via lz4.block
+    :param data: uncompressed data
+    :type data: bytes
+    :return: compressed data
+    :rtype: bytes
+    """
+    return lz4.block.compress(data, mode="default", store_size=False)
+
+def compress_lz4hc(data: bytes) -> bytes:  # LZ4HC
+    """Compresses data via lz4.block
 
     :param data: uncompressed data
     :type data: bytes
@@ -86,10 +112,39 @@ def compress_lz4(data: bytes) -> bytes:  # LZ4M/LZ4HC
         data, mode="high_compression", compression=9, store_size=False
     )
 
+# LZ4
+def decompress_lzham(data: bytes, uncompressed_size: int) -> bytes:  # LZ4M/LZ4HC
+    """Decompresses lzham-compressed data
+
+    :param data: compressed data
+    :type data: bytes
+    :param uncompressed_size: size of the uncompressed data
+    :type uncompressed_size: int
+    :raises _block.LZ4BlockError: Decompression failed: corrupt input or insufficient space in destination buffer.
+    :return: uncompressed data
+    :rtype: bytes
+    """
+    if NO_LZHAM:
+        raise Exception("package pylzham is not installed")
+    return lzham_decompressor.decompress(data, uncompressed_size)
+
+
+def compress_lzham(data: bytes) -> bytes:  # LZ4M/LZ4HC
+    """Compresses data via lz4.block
+
+    :param data: uncompressed data
+    :type data: bytes
+    :return: compressed data
+    :rtype: bytes
+    """
+    if NO_LZHAM:
+        raise Exception("package pylzham is not installed")
+    return lzham_decompressor.compress(data)
+
 
 # Brotli
 def decompress_brotli(data: bytes) -> bytes:
-    """decompresses brotli-compressed data
+    """Decompresses brotli-compressed data
 
     :param data: compressed data
     :type data: bytes
@@ -97,23 +152,27 @@ def decompress_brotli(data: bytes) -> bytes:
     :return: uncompressed data
     :rtype: bytes
     """
+    if NO_BROTLI:
+        raise Exception("package Brotli is not installed")
     return brotli.decompress(data)
 
 
 def compress_brotli(data: bytes) -> bytes:
-    """compresses data via brotli
+    """Compresses data via brotli
 
     :param data: uncompressed data
     :type data: bytes
     :return: compressed data
     :rtype: bytes
     """
+    if NO_BROTLI:
+        raise Exception("package Brotli is not installed")
     return brotli.compress(data)
 
 
 # GZIP
 def decompress_gzip(data: bytes) -> bytes:
-    """decompresses gzip-compressed data
+    """Decompresses gzip-compressed data
 
     :param data: compressed data
     :type data: bytes
@@ -125,7 +184,7 @@ def decompress_gzip(data: bytes) -> bytes:
 
 
 def compress_gzip(data: bytes) -> bytes:
-    """compresses data via gzip
+    """Compresses data via gzip
     The current static settings may not be the best solution,
     but they are the most commonly used values and should therefore be enough for the time being.
 

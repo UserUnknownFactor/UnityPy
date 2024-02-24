@@ -9,11 +9,12 @@ from UnityPy.streams import EndianBinaryWriter
 # This is done in import_pyfmodex()
 # which will replace the global pyfmodex var
 pyfmodex = None
+NO_MODEX = False
 
 
 def import_pyfmodex():
-    global pyfmodex
-    if pyfmodex is not None:
+    global pyfmodex, NO_MODEX
+    if pyfmodex is not None or NO_MODEX:
         return
 
     ROOT = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
@@ -38,7 +39,7 @@ def import_pyfmodex():
                 arch = "armhf" if machine.endswith("l") else "arm"
             elif arch == "64bit":
                 # Raise an exception for now; Once it gets supported by FMOD we can just modify the code here
-                pyfmodex = False
+                pyfmodex = None
                 raise NotImplementedError(
                     "ARM64 not supported by FMOD.\nUse a 32bit python version."
                 )
@@ -47,7 +48,7 @@ def import_pyfmodex():
         elif arch == "64bit":
             arch = "x86_64"
     else:
-        pyfmodex = False
+        pyfmodex = None
         raise NotImplementedError(
             "Couldn't find a correct FMOD library for your system ({system} - {arch})."
         )
@@ -66,7 +67,10 @@ def import_pyfmodex():
         # hotfix ctypes for pyfmodex for non windows
         ctypes.windll = getattr(ctypes, "windll", None)
 
-    import pyfmodex
+    try:
+        import pyfmodex
+    except:
+        NO_MODEX = True
 
 
 
@@ -92,10 +96,11 @@ def extract_audioclip_samples(audio) -> dict:
 
 
 def dump_samples(clip):
-    if pyfmodex is None:
-        import_pyfmodex()
-    if not pyfmodex:
+
+    import_pyfmodex()
+    if pyfmodex is None or NO_MODEX:
         return {}
+
     # init system
     system = pyfmodex.System()
     system.init(clip.m_Channels, pyfmodex.flags.INIT_FLAGS.NORMAL, None)
@@ -134,27 +139,27 @@ def subsound_to_wav(subsound):
     sample_rate = int(subsound.default_frequency)
 
     # write to buffer
-    w = EndianBinaryWriter(endian="<")
+    writer = EndianBinaryWriter(endian="<")
     # riff chucnk
-    w.write(b"RIFF")
-    w.write_int(length + 36)  # sizeof(FmtChunk) + sizeof(RiffChunk) + length
-    w.write(b"WAVE")
+    writer.write(b"RIFF")
+    writer.write_int(length + 36)  # sizeof(FmtChunk) + sizeof(RiffChunk) + length
+    writer.write(b"WAVE")
     # fmt chunck
-    w.write(b"fmt ")
-    w.write_int(16)  # sizeof(FmtChunk) - sizeof(RiffChunk)
-    w.write_short(1)
-    w.write_short(channels)
-    w.write_int(sample_rate)
-    w.write_int(sample_rate * channels * bits // 8)
-    w.write_short(channels * bits // 8)
-    w.write_short(bits)
+    writer.write(b"fmt ")
+    writer.write_int(16)  # sizeof(FmtChunk) - sizeof(RiffChunk)
+    writer.write_short(1)
+    writer.write_short(channels)
+    writer.write_int(sample_rate)
+    writer.write_int(sample_rate * channels * bits // 8)
+    writer.write_short(channels * bits // 8)
+    writer.write_short(bits)
     # data chunck
-    w.write(b"data")
-    w.write_int(length)
+    writer.write(b"data")
+    writer.write_int(length)
     # data
     lock = subsound.lock(0, length)
     for ptr, length in lock:
         ptr_data = ctypes.string_at(ptr, length.value)
-        w.write(ptr_data)
+        writer.write(ptr_data)
     subsound.unlock(*lock)
-    return w.bytes
+    return writer.save()

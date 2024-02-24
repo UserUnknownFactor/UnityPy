@@ -1,4 +1,4 @@
-import os, sys, zlib
+import zlib
 
 # ---- Algorithms ----
 
@@ -8,11 +8,11 @@ MASK = (1 << 32) - 1
 def get_reversed_crc32(stream, offset = 0):
     return bit_reverse(get_crc32(stream, offset))
 
-def get_crc32(stream, offset = 0):
+def get_crc32(stream, offset = 0, block_size=128 * 1024):
     stream.seek(offset)
     crc = 0
     while True:
-        buf = stream.read(128 * 1024)
+        buf = stream.read(block_size)
         if len(buf) == 0:
             return crc & MASK
         else:

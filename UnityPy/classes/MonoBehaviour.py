@@ -10,28 +10,34 @@ class MonoBehaviour(Behaviour):
         self.name = reader.read_aligned_string()
 
         self._raw_offset = reader.Position
-        if self.assets_file._enable_type_tree:
+        if self.assets_file.type_trees_saved and self.assets_file._use_type_trees:
             try:
-                self.read_typetree()
+                self.read_typetree(all_trees=self.assets_file.get_all_typetrees())
             except TypeTreeError as e:
-                print("Failed to read TypeTree:\n", e)
-                self.assets_file._enable_type_tree = False
+                print(f"failed to read TypeTree for {self.name} [path_id={self.path_id}]: {e}")
+                self.assets_file._use_type_trees = False
+                self.raw_monobehaviour = self.reader.read_the_rest()
+        else:
+            self.raw_monobehaviour = self.reader.read_the_rest()
 
     def save(self, writer: EndianBinaryWriter = None, raw_data: bytes = None):
+        if raw_data is None:
+            if not self.raw_monobehaviour:
+                ValueError("No raw MonoBehaviour data provided")
+            else:
+                raw_data = self.raw_monobehaviour
+
         if writer is None:
             writer = EndianBinaryWriter(endian=self.reader.endian)
-        if not raw_data:
-            ValueError("No raw data given")
-        
+
         super().save(writer)
         self.m_Script.save(writer)
         writer.write_aligned_string(self.name)
         writer.write(raw_data)
-        
-        self.set_raw_data(writer.bytes)
 
-    @property
-    def raw_data(self) -> bytes:
+        self.set_raw_data(writer)
+
+    def get_raw_monobehaviour(self) -> bytes:
         """
         Reads the undocumentated data following the default init.
         This is usefull for classes that are stored via MonoBehaviours.

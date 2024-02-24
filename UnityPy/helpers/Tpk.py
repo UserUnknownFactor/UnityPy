@@ -19,7 +19,7 @@ def init():
         TPKTYPETREE = TpkFile(f).GetDataBlob()
 
 
-def get_typetree_nodes(class_id: int, version: tuple):
+def get_typetree_nodes_from_tpk(class_id: int, version: tuple):
     global NODES_CACHE
     key = (class_id, version)
     if key in NODES_CACHE:

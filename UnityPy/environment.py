@@ -235,16 +235,19 @@ class Environment:
     def save(self, pack: str = "none", writer_generator: Callable = None, out_path=None):
         """Saves all changed assets.
         Mark assets as changed using `.mark_changed()` if they aren't auto-marked.
-        pack = "none" (default) or "lz4"
+        pack = "none" (default), "lz4" or "original"
         """
         for f in self.files:
             opath = self.out_path
             if out_path:
                 opath = out_path
-            if getattr(self.files[f], "is_changed", False):
+            if getattr(self.files[f], "is_changed", False):# and not getattr(self.files[f], "is_dependency", False):
                 fn = os.path.join(opath, os.path.basename(f))
-                with open(fn, "wb") as out:
-                    out.write(self.files[f].save(packer=pack, writer=writer_generator(fn) if writer_generator else None))
+                if writer_generator:
+                    self.files[f].save(packer=pack, writer=writer_generator(fn))
+                else:
+                    with open(fn, 'w+b') as wf:
+                        self.files[f].save(packer=pack, writer=EndianBinaryWriter(wf))
                 self.files[f].is_changed = False
 
     def process(self, obj_modify: Callable, types: list=DEFAULT_TYPES, **kwargs):
@@ -304,7 +307,6 @@ class Environment:
     @property
     def objects(self) -> List[ObjectReader]:
         """Returns a list of all objects in the Environment."""
-
         def search(item):
             ret = []
             if not isinstance(item, Environment) and getattr(item, "objects", None):
@@ -338,7 +340,6 @@ class Environment:
         """
         Lists all assets / SerializedFiles within this environment.
         """
-
         def gen_all_asset_files(file, ret=[]):
             for f in getattr(file, "files", {}).values():
                 if getattr(f, "is_dependency", False):
@@ -348,7 +349,6 @@ class Environment:
                 else:
                     gen_all_asset_files(f, ret)
             return ret
-
         return gen_all_asset_files(self)
 
     def get(self, key: str, default=None):
@@ -383,7 +383,7 @@ class Environment:
         """
         cab = self.cabs.get(simplify_name(name), None)
         if cab:
-            self.cabs[simplify_name(name)].close()
+            cab.close()
             del self.cabs[simplify_name(name)]
 
 

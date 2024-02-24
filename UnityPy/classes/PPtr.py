@@ -1,9 +1,9 @@
 from ..files import ObjectReader
-from ..streams import EndianBinaryReader, EndianBinaryWriter
+from ..streams import EndianBinaryWriter
 from ..enums import ClassIDType
 from ..config import WARNED_NOTFOUND_ONCE
 
-
+# NOTE: don't call this by itself since it may be depreciated
 def save_ptr(obj, writer: EndianBinaryWriter):
     if isinstance(obj, PPtr):
         writer.write_int(obj.file_id)
@@ -109,9 +109,13 @@ class PPtr:
     def __getattr__(self, key):
         obj = self.get_obj()
         if obj is None:
+            if key == "read":
+                return lambda: None
             raise AttributeError(f"{self} has no method called \"{key}\"")
         return getattr(obj, key)
 
     def __bool__(self):
         return True if self.get_obj() else False
 
+    def __hash__(self):
+        return hash((self.file_id, self.path_id))

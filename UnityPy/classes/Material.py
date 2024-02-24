@@ -90,7 +90,8 @@ class Material(NamedObject):
             writer.write_int(len(self.m_BuildTextureStacks))
             for item in self.m_BuildTextureStacks:
                 item.save(writer)
-        self.set_raw_data(writer.bytes)
+
+        self.set_raw_data(writer)
 
 class BuildTextureStackReference:
     def __init__(self, reader: EndianBinaryReader):

@@ -3,10 +3,10 @@ from ..classes.Object import NodeHelper
 from .. import classes
 from ..streams import EndianBinaryReader, EndianBinaryWriter
 from ..helpers import TypeTreeHelper
-from ..helpers.Tpk import get_typetree_nodes
-from ..exceptions import TypeTreeError
-from ..files import SerializedFile#, BundleFile, WebFile
-#from typing import Union
+from ..helpers.Tpk import get_typetree_nodes_from_tpk
+from ..exceptions import TypeTreeError, sanity_check, ReadingPastObject
+from ..files import SerializedFile
+from typing import Union
 from .. import config
 
 
@@ -28,14 +28,14 @@ class ObjectReader:
     def __init__(self, assets_file: SerializedFile, reader: EndianBinaryReader):
         self.assets_file = assets_file
         self.reader = reader
-        self.data = b""
+        self.data = b''
         self.version = assets_file.version
         self.version2 = assets_file.header.version
         self.platform = assets_file.target_platform
         self.build_type = assets_file.build_type
 
         header = assets_file.header
-        types = assets_file.types
+        stypes = assets_file.serialized_types
 
         # AssetStudio ObjectInfo init
         if assets_file.big_id_enabled:
@@ -65,14 +65,14 @@ class ObjectReader:
         if header.version < 16:
             self.class_id = reader.read_u_short()
             self.serialized_type = None
-            for typ in types:
-                if typ.class_id == self.type_id:
-                    self.serialized_type = typ
+            for stype in stypes:
+                if stype.class_id == self.type_id:
+                    self.serialized_type = stype
                     break
         else:
-            typ = types[self.type_id]
-            self.serialized_type = typ
-            self.class_id = typ.class_id
+            stype = stypes[self.type_id]
+            self.serialized_type = stype
+            self.class_id = stype.class_id
 
         self.type = ClassIDType(self.class_id)
 
@@ -134,55 +134,81 @@ class ObjectReader:
         if header.version == 15 or header.version == 16:
             writer.write_byte(self.stripped)
 
-    def set_raw_data(self, data):
-        self.data = data
-        self.assets_file.mark_changed()
-
     @property
     def container(self):
         return self.assets_file._container.path_dict.get(self.path_id)
 
     @property
-    def Position(self):
+    def Position(self) -> int:
         return self.reader.Position
 
     @Position.setter
-    def Position(self, pos):
-        self.reader.Position = pos
+    def Position(self, value: int):
+        self.reader.Position = value
+
+    @property
+    def already_read(self) -> int:
+        return self.reader.Position - self.byte_start
 
     def reset(self):
         self.reader.Position = self.byte_start
 
-    def read(self, return_typetree_on_error: bool=True):
+    def read(self, return_typetree_on_error=False, safe=True):
         cls = getattr(classes, self.type.name, None)
-
         obj = None
         if cls:
-            try:
+            if safe:
+                try:
+                    obj = cls(self)
+                except Exception as e:
+                    if return_typetree_on_error:
+                        print(f"Error during the parsing of <{self.type.name} " +
+                            f"path_id: {self.path_id}; asset_file: {self.assets_file.name}>")
+                        print(e)
+                        if config.ENABLE_TYPETREEHELPER_FALLBACK:
+                            print("Trying to return its TypeTree...")
+                    else:
+                        raise e
+            else:
                 obj = cls(self)
-            except Exception as e:
-                if return_typetree_on_error:
-                    print(f"Error during the parsing of <{self.type.name} path_id: {self.path_id}; " +
-                          f"asset_file: {self.assets_file.name}>")
-                    print(e)
-                    if config.ENABLE_TYPETREEHELPER_FALLBACK:
-                        print("Trying to return its TypeTree...")
-                else:
-                    raise e
         if not obj and config.ENABLE_TYPETREEHELPER_FALLBACK:
             obj = self.read_typetree(wrap=True)
         self._last_read_pos = self.reader.Position
-        end_pos = self.byte_start + self.byte_size
-        if config.DEBUG_TYPETREES and self._last_read_pos < end_pos and obj and obj.type == ClassIDType.MonoBehaviour:
-            print(f"self._last_read_pos < end_pos: {self._last_read_pos} < {end_pos} (diff = {end_pos-self._last_read_pos}) in {obj}")
         return obj
+
+    def get_raw_data(self) -> bytes:
+        """Gets raw ObjectReader's data (from the storage)"""
+        pos = self.Position
+        self.reset()
+        ret = self.reader.read_bytes(self.byte_size)
+        self.Position = pos
+        return ret
+
+    def set_raw_data(self, data: Union[memoryview, bytes, EndianBinaryReader, "ObjectReader", EndianBinaryWriter]):
+        """Sets raw ObjectReader's data (without writing it to the storage)"""
+        if isinstance(data, (ObjectReader, EndianBinaryReader, EndianBinaryWriter)):
+            self.data = data.save()
+        else:
+            self.data = data
+        if self.assets_file:
+            self.assets_file.mark_changed()
+
+    def read_the_rest(self) -> bytes:
+        """Returns the rest of the ObjectReader's bytes"""
+        if False and DEBUG and self.BaseOffset + self.Position - self.byte_start  > self.byte_size:
+            raise ReadingPastObject(reader)
+        return self.read_bytes(self.byte_size - (self.Position - self.byte_start))
+
+    #raw_data = property(get_raw_data, set_raw_data) # don't really need it outside debugging
 
     def get(self, key, default=None):
         return getattr(self, key, default)
 
-    def __getattr__(self, item: str):
-        if hasattr(self.reader, item):
-            return getattr(self.reader, item)
+    def __getattr__(self, name: str):
+        if hasattr(self.reader, name):
+            return getattr(self.reader, name)
+        else:
+            raise AttributeError(f"{self.__class__.__name__} has not attribute {name}")
 
     def __repr__(self):
         return "<%s %s>" % (self.__class__.__name__, self.type.name)
@@ -206,40 +232,29 @@ class ObjectReader:
     def get_typetree_nodes(self, nodes: list = None) -> list:
         if nodes:
             return nodes
-
         if self.serialized_type:
             nodes = self.serialized_type.nodes
         if not nodes:
-            nodes = get_typetree_nodes(self.class_id, self.version)
+            nodes = get_typetree_nodes_from_tpk(self.class_id, self.version)
         if not nodes:
             raise TypeTreeError("There are no TypeTree nodes for this object.")
         return nodes
 
-    def read_typetree(self, nodes: list = None, wrap: bool = False) -> dict:
-        self.reset()
+    def read_typetree(self, nodes: list = None, wrap: bool = False, all_trees=None) -> dict:
         nodes = self.get_typetree_nodes(nodes)
-        res = TypeTreeHelper.read_typetree(nodes, self)
+        if not all_trees:
+            all_trees = self.assets_file.get_all_typetrees()
+        self.reset()
+        res = TypeTreeHelper.read_typetree(nodes, self, all_trees=all_trees)
         return NodeHelper(res, self.assets_file) if wrap else res
 
     def save_typetree(
-        self, tree: dict, nodes: list = None, writer: EndianBinaryWriter = None
+        self, tree: dict, nodes: list = None, writer: EndianBinaryWriter = None, all_trees:dict = None
     ):
         nodes = self.get_typetree_nodes(nodes)
         if not writer:
             writer = EndianBinaryWriter(endian=self.reader.endian)
-        writer = TypeTreeHelper.write_typetree(tree, nodes, writer)
-        data = writer.bytes
+        writer = TypeTreeHelper.write_typetree(tree, nodes, writer, all_trees)
+        data = writer.save()
         self.set_raw_data(data)
         return data
-
-    def get_raw_data(self) -> bytes:
-        pos = self.Position
-        self.reset()
-        ret = self.reader.read_bytes(self.byte_size)
-        self.Position = pos
-        return ret
-
-    def set_raw_data(self, data):
-        self.data = data
-        if self.assets_file:
-            self.assets_file.mark_changed()

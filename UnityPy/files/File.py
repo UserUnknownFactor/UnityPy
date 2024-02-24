@@ -1,17 +1,15 @@
-from ..enums import FileType
+from typing import Union, Type, TYPE_CHECKING
 from ..helpers import ImportHelper
 from ..streams import EndianBinaryReader, EndianBinaryWriter
+if TYPE_CHECKING:
+    from ..environment import Environment
 
-from collections import namedtuple
 from os.path import basename, isfile, join, dirname
-from os import makedirs, sep
+from os import makedirs, sep, path
 from re import sub
 import weakref
 
-from .. import config
-
-DirectoryInfo = namedtuple("DirectoryInfo", "path offset size")
-
+#from .. import config
 
 class File(object):
     name: str
@@ -55,7 +53,6 @@ class File(object):
     def get_assets(self):
         if isinstance(self, SerializedFile.SerializedFile):
             return self
-
         for f in self.files.values():
             if isinstance(f, (BundleFile.BundleFile, WebFile.WebFile)):
                 for asset in f.get_assets():
@@ -98,42 +95,57 @@ class File(object):
         self.environment = None
         self.parent = None
 
-    def read_files(self, reader: EndianBinaryReader, files: list, **kwargs):
+    def dump(self, reader, embedded_file):
+        a_name = self.allowed_path(embedded_file.path)
+        size = embedded_file.size
+        if not isfile(a_name) or path.getsize(a_name) != size:
+            self.make_path(a_name)
+            READ_BLOCK_MAX = 314572800
+            with open(a_name, "wb") as d:
+                block_size = min(size, READ_BLOCK_MAX)
+                i = size // READ_BLOCK_MAX
+                j = 0
+                while (i >= 0):
+                    i -= 1
+                    j += 1
+                    if size < block_size  *  j:
+                        #remainder since we read from the entire file
+                        block_size = size % READ_BLOCK_MAX
+                    if block_size == 0: break
+                    d.write(reader.read(block_size))
+        return a_name
+
+    def read_files(self, reader, files: list, **kwargs):
         if reader is None or len(files) == 0:
             return
-        # read file data and convert it
         dump = kwargs.get("dump", False)
+
+        # read file data and convert it
         for embedded_file in files:
             name = embedded_file.path
             reader.Position = embedded_file.offset
             size = embedded_file.size
+            if isinstance(reader, BlockStream.BlockStream):
+                cur_reader = reader.get_file_reader(name)
+            else:
+                cur_reader = reader
+            #assert cur_reader.Length == size, f"Wrong unpacked file size for {name} reader.Length ({reader.Length}) != size ({size}) diff = {abs(reader.Length-size)}"
             if dump:
-                a_name = self.allowed_path(name)
-                if not isfile(a_name):
-                    self.make_path(a_name)
-                    READ_BLOCK_MAX = 314572800
-                    with open(a_name, "wb") as d:
-                        block_size = min(size, READ_BLOCK_MAX)
-                        i = size // READ_BLOCK_MAX
-                        j = 0
-                        while (i >= 0):
-                            i -= 1
-                            j += 1
-                            if size < block_size  *  j:
-                                #remainder since we read from the entire file
-                                block_size = size % READ_BLOCK_MAX
-                            if block_size == 0: break
-                            d.write(reader.read(block_size))
+                a_name = self.dump(cur_reader, embedded_file)
                 node_reader = EndianBinaryReader(a_name)
             else:
-                node_reader = EndianBinaryReader(
-                    reader.read(size),
-                    offset=(reader.BaseOffset + embedded_file.offset)
-                )
+                if not name.lower().endswith((".ress", ".resource")):
+                    node_reader = EndianBinaryReader(
+                        cur_reader.read(size),
+                        offset=(cur_reader.BaseOffset + embedded_file.offset)
+                    )
+                else:
+                    node_reader = cur_reader
             f = ImportHelper.parse_file(
                 node_reader, self, name, is_dependency=self.is_dependency
             )
-            if isinstance(f, (EndianBinaryReader, SerializedFile.SerializedFile)):
+            if isinstance(f, (BlockStream.FileBlocksReader, EndianBinaryReader,
+                              SerializedFile.SerializedFile)):
                 if self.environment:
                     self.environment.register_cab(name, f)
 
@@ -210,4 +222,4 @@ class File(object):
 
 
 # recursive import requires the import down here
-from . import BundleFile, SerializedFile, WebFile, ObjectReader
+from . import BundleFile, SerializedFile, WebFile, ObjectReader, BlockStream

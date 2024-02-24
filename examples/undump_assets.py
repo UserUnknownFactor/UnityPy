@@ -37,12 +37,14 @@ def get_encryption_func(key):
 
 def get_reader_func(key):
     def reader_generator(fn):
-        return EndianBinaryReader(fn, encrypt_func=get_encryption_func(key))
+        with open(fn, "rb") as f:
+            return EndianBinaryReader(f, encrypt_func=get_encryption_func(key))
     return reader_generator
 
 def get_writer_func(key):
     def writer_generator(fn):
-        return EndianBinaryWriter(b"", encrypt_func=get_encryption_func(key))
+        with open(fn, "w+b") as f:
+            return EndianBinaryWriter(f, encrypt_func=get_encryption_func(key))
     return writer_generator
 
 def base_name(path):

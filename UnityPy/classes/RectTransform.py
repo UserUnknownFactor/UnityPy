@@ -20,4 +20,4 @@ class RectTransform(Transform):
         writer.write_vector2(self.m_SizeDelta)
         writer.write_vector2(self.m_Pivot)
 
-        self.set_raw_data(writer.bytes)
+        self.set_raw_data(writer)

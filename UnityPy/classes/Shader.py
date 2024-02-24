@@ -112,7 +112,7 @@ class Shader(NamedObject):
             #except Exception as e:
                 #print(e)
                 #reader.Position = details_pos
-                #self.the_rest = reader.read_the_rest(reader)
+                #self.the_rest = reader.read_the_rest()
         else:
             scriptSize = reader.read_int()
             sanity_check("scriptSize", scriptSize, reader.Length)
@@ -183,8 +183,8 @@ class Shader(NamedObject):
                 writer.write_u_int(self.decompressedSize)
                 writer.write_int(len(self.m_SubProgramBlob))
                 writer.write_bytes(self.m_SubProgramBlob)
-        self.set_raw_data(writer.bytes)
-        pass
+
+        self.set_raw_data(writer)
 
     @property
     def name(self):

@@ -45,6 +45,8 @@ def find_all_files(directory: str, search_str: str) -> List[str]:
 def check_file_type(input_) -> Union[FileType, EndianBinaryReader]:
     if isinstance(input_, str) and os.path.isfile(input_):
         reader = EndianBinaryReader(open(input_, "rb"))
+    elif isinstance(input_, (files.BlockStream, files.FileBlocksReader)):
+        return FileType.ResourceFile, input_
     elif isinstance(input_, EndianBinaryReader):
         reader = input_
     else:
@@ -132,12 +134,16 @@ def parse_file(
     typ: FileType = None,
     is_dependency=False,
     **kwargs
-) -> Union[files.File, EndianBinaryReader]:
+) -> Union[files.File, files.FileBlockStream, EndianBinaryReader]:
+    lc_name = name.lower()
+    if lc_name.endswith(
+        (".config", ".xml", ".dat", ".info", ".json", ".py", ".dll", ".exe")):
+        return None
+    if lc_name.endswith((".ress", ".resource")):
+        return reader
     if typ is None:
         typ, _ = check_file_type(reader)
-    if typ == FileType.AssetsFile and not name.endswith(
-        (".resS", ".resource", ".config", ".xml", ".dat", ".info", ".json", ".py", ".dll")
-    ):
+    if typ == FileType.AssetsFile:
         f = files.SerializedFile(reader, parent, name=name, is_dependency=is_dependency, **kwargs)
     elif typ == FileType.BundleFile:
         f = files.BundleFile(reader, parent, name=name, is_dependency=is_dependency, **kwargs)

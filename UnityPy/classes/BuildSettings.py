@@ -32,7 +32,7 @@ class BuildSettings(Object):
         self.m_AuthToken = reader.read_aligned_string()
         self.m_GraphicsAPIs = reader.read_int_array()
         """
-        self.the_rest = reader.read_the_rest(reader)
+        self.the_rest = reader.read_the_rest()
 
     def save(self, writer: EndianBinaryWriter = None):
         if writer is None:
@@ -66,4 +66,5 @@ class BuildSettings(Object):
         """
 
         writer.write_bytes(self.the_rest)
-        self.set_raw_data(writer.bytes)
+
+        self.set_raw_data(writer)

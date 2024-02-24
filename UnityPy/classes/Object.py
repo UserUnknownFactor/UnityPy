@@ -41,8 +41,8 @@ class Object(object):
     def dump_typetree_structure(self) -> str:
         return self.reader.dump_typetree_structure()
 
-    def read_typetree(self, nodes: list = None, wrap: bool = False) -> dict:
-        tree = self.reader.read_typetree(nodes)
+    def read_typetree(self, nodes: list = None, wrap: bool = False, all_trees=None) -> dict:
+        tree = self.reader.read_typetree(nodes, all_trees=all_trees)
         self.type_tree = NodeHelper(tree, self.assets_file)
         return self.type_tree if wrap else tree
 
@@ -54,7 +54,7 @@ class Object(object):
                 return {key: class_to_dict(val) for key, val in value.items()}
             elif hasattr(value, "__dict__"):
                 if isinstance(value, PPtr):
-                    return {"m_PathID": value.path_id, "m_FileID": value.file_id}
+                    return {"m_FileID": value.file_id, "m_PathID": value.path_id}
                 return {
                     key: class_to_dict(val)
                     for key, val in value.__dict__.items()
@@ -70,7 +70,7 @@ class Object(object):
     def get_raw_data(self) -> bytes:
         return self.reader.get_raw_data()
 
-    def set_raw_data(self, data):
+    def set_raw_data(self, data: bytes):
         self.reader.set_raw_data(data)
 
     def save(self, writer: EndianBinaryWriter = None, intern_call=False):
@@ -83,11 +83,6 @@ class Object(object):
             # save for objects WITHOUT specific save function
             # so we have to use the typetree if it exists
             self.save_typetree()
-
-    def _save(self, writer):
-        # the reader is actually an ObjectReader,
-        # the data value is written back into the asset
-        self.reader.data = writer.bytes
 
     def __getattr__(self, name):
         """
@@ -124,8 +119,8 @@ class NodeHelper:
     def __init__(self, data, assets_file):
         if "m_PathID" in data and "m_FileID" in data:
             # used to make pointers directly useable
-            self.path_id = data["m_PathID"]
             self.file_id = data["m_FileID"]
+            self.path_id = data["m_PathID"]
             self.index = data.get("m_Index", -2)
             self.assets_file = assets_file
             self._obj = None
@@ -134,6 +129,7 @@ class NodeHelper:
             self.__dict__ = {
                 key: NodeHelper(val, assets_file) for key, val in data.items()
             }
+        pass
 
     def __new__(cls, data, assets_file):
         if isinstance(data, dict):
@@ -154,13 +150,12 @@ class NodeHelper:
                 if isinstance(val, NodeHelper)
                 else [dump(item) for item in val]
                 if isinstance(val, list)
-                else {"m_PathID": val.path_id, "m_FileID": val.file_id}
+                else {"m_FileID": val.file_id, "m_PathID": val.path_id}
                 if isinstance(val, PPtr)
                 else [x for x in val]
                 if isinstance(val, (bytearray, bytes))
                 else val
             )
-
         return {key: dump(val) for key, val in self.__dict__.items()}
 
     def items(self):
@@ -174,13 +169,10 @@ class NodeHelper:
 
     def save(self, *args, **kwargs):
         raise NotImplementedError(
-            "This is a guessed structure, please create its proper "+
-            "parser or use the Object's save_typetree(<this NodeHelper>) method."
+            "This is a helper structure, please create its proper parser"+
+            " or use Object's save_typetree(<this NodeHelper>) method."
         )
 
     def __repr__(self):
         name = getattr(self, "m_Name", None)
-        if name:
-            return f"<NodeHelper name={name}>"
-        else:
-            return "<NodeHelper>"
+        return f"<NodeHelper name={name}>" if name else "<NodeHelper>"

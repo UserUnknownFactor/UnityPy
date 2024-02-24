@@ -30,5 +30,6 @@ class Transform(Component):
         writer.write_int(len(self.m_Children))
         [self.m_Children[i].save(writer) for i in range(len(self.m_Children))]
         self.m_Father.save(writer)
+
         if not intern_call:
-            self.set_raw_data(writer.bytes)
+            self.set_raw_data(writer)

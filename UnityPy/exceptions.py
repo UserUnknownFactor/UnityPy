@@ -1,11 +1,13 @@
 from . import config
 
+MAX_SANE = 0xFFFFF
+
 class TypeTreeError(Exception):
     def __init__(self, message, nodes):
         super().__init__(message)
         self.nodes = nodes
 
-def sanity_check(value_name: str, value: int, max_value: int=32767) -> None:
+def sanity_check(value_name: str, value: int, max_value: int=MAX_SANE) -> None:
         if config.DEBUG and (value > max_value):
             raise ValueIsTooBig(f"{value_name} length", value)
 

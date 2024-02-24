@@ -12,6 +12,10 @@ class Texture2D(Texture):
     def image(self):
         return Texture2DConverter.get_image_from_texture2d(self)
 
+    @property
+    def name(self):
+        return self.m_Name
+
     @image.setter
     def image(self, img):
         # img is PIL.Image / image path / opened file
@@ -26,12 +30,12 @@ class Texture2D(Texture):
             or isinstance(img, IOBase)
         ):
             img = Image.open(img)
-        bad_width = img.width != self.m_Width
-        bad_height = img.height != self.m_Height
+        bad_width = img.size[0] != self.m_Width
+        bad_height = img.size[1] != self.m_Height
         if bad_width or bad_height:
-            print(f"Image must have the same dimensions as Texture2D " + (
-                f"{img.width} != {self.m_Width}" if bad_width else "") + (
-                f"{img.height} != {self.m_Height}" if bad_height else ""))
+            print(f"Image must have the same dimensions as original Texture2D " + (
+                f"{img.size[0]} != {self.m_Width}; " if bad_width else "") + (
+                f"{img.size[1]} != {self.m_Height}" if bad_height else ""))
             return
         img_data, tex_format = Texture2DConverter.image_to_texture2d(
             img, self.m_TextureFormat
@@ -237,7 +241,7 @@ class Texture2D(Texture):
 
             self.m_StreamData.save(writer, version)
 
-        self.set_raw_data(writer.bytes)
+        self.set_raw_data(writer)
 
 
 class StreamingInfo:

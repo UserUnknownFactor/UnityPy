@@ -105,4 +105,4 @@ class UnityConnectSettings(Object):
         self.m_UnityAdsSettings.save(writer)
         self.m_PerformanceReportingSettings.save(writer)
         
-        self.set_raw_data(writer.bytes)
+        self.set_raw_data(writer)

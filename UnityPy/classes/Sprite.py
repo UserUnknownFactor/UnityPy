@@ -92,7 +92,7 @@ class Sprite(NamedObject):
             for bone in self.m_Bones:
                 bone.save(writer, version)
 
-        self.set_raw_data(writer.bytes)
+        self.set_raw_data(writer)
 
 
 class SecondarySpriteTexture:

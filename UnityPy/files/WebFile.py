@@ -21,7 +21,7 @@ class WebFile(File.File):
 
         if magic == CompressionHelper.GZIP_MAGIC:
             self.packer = "gzip"
-            data = CompressionHelper.decompress_gzip(reader.bytes)
+            data = CompressionHelper.decompress_gzip(reader.save())
             reader = EndianBinaryReader(data, endian="<")
         else:
             reader.Position = 0x20
@@ -29,7 +29,7 @@ class WebFile(File.File):
             reader.Position = 0
             if CompressionHelper.BROTLI_MAGIC == magic:
                 self.packer = "brotli"
-                data = CompressionHelper.decompress_brotli(reader.bytes)
+                data = CompressionHelper.decompress_brotli(reader.save())
                 reader = EndianBinaryReader(data, endian="<")
             else:
                 self.packer = "none"
@@ -69,7 +69,7 @@ class WebFile(File.File):
 
         # get raw data
         files = {
-            name: f.bytes if isinstance(f, EndianBinaryReader) else f.save()
+            name: f.save() if isinstance(f, EndianBinaryReader) else f.save()
             for name, f in files.items()
         }
 
@@ -111,9 +111,9 @@ class WebFile(File.File):
             writer.write(data)
 
         if packer == "gzip":
-            return CompressionHelper.compress_gzip(writer.bytes)
+            return CompressionHelper.compress_gzip(writer.save())
         elif packer == "brotli":
-            return CompressionHelper.compress_brotli(writer.bytes)
+            return CompressionHelper.compress_brotli(writer.save())
         else:
-            return writer.bytes
+            return writer.save()
 

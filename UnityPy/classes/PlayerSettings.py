@@ -251,7 +251,7 @@ class PlayerSettings(Object):
         self.virtualTexturingSupportEnabled = reader.read_boolean()
         self.uploadClearedTextureDataAfterCreationFromScript = reader.read_boolean()
         """
-        self.the_rest = reader.read_the_rest(reader)
+        self.the_rest = reader.read_the_rest()
 
     def save(self, writer: EndianBinaryWriter = None):
         if writer is None:
@@ -290,5 +290,5 @@ class PlayerSettings(Object):
         writer.align_stream()
 
         writer.write_bytes(self.the_rest)
-        self.set_raw_data(writer.bytes)
+        self.set_raw_data(writer)
 

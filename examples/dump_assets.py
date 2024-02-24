@@ -29,12 +29,12 @@ if os.path.isfile("assembly_typetrees.json"):
         ASSEMBLY_TREES = json.loads(f.read())
 
 from numpy import frombuffer, uint8, bitwise_and, bitwise_xor, right_shift, concatenate, dtype, fromstring, uint64, uint32, uint16, ubyte
-def get_encryption_func(key):
-    def encryption_func(data, pos):
+def get_decryption_func(key):
+    def decryption_func(data, pos):
         data = frombuffer(data, dtype=ubyte)
         # some cypher algo here
         return bytes(bitwise_xor(data, key))
-    return encryption_func
+    return decryption_func
 
 def allowed_path(path_name):
     return re.sub(r'[^\w(){}[]\-_\. ]|[\*\?\!]', '_',  path_name)
@@ -59,7 +59,10 @@ def main():
         print("Parsing file:", src)
         if "StreamingAssets" in src:
             key = 0
-            asset = am.load_file(EndianBinaryReader(sample, encrypt_func=get_encryption_func(key)), name=file_name)
+            asset = am.load_file(
+                EndianBinaryReader(
+                    open(file_name, 'rb'), crypto_func=get_decryption_func(key)
+                ), name=file_name)
         else:
             asset = am.load_file(file_name, name=file_name)
         if asset is None:
@@ -203,7 +206,6 @@ def export_obj(obj, asset: str) -> list:
                 except Exception as e:
                     #print("Error", str(e), "in", objname)
                     pass
-
         if is_raw:
             extension = "dat"
             export = data.get_raw_data()
@@ -218,7 +220,6 @@ def export_obj(obj, asset: str) -> list:
         if not is_raw and not os.path.isfile(fp):
             with open(fp, "wb") as f:
                 f.write(export)
-
     #else:
     #     fp = "%s-%s-%d" % (asset, obj.path_id, obj.type)
 
