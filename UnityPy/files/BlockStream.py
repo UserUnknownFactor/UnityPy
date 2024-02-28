@@ -7,8 +7,10 @@ from ..helpers import ArchiveStorageManager, CompressionHelper
 from ..streams import EndianBinaryReader, EndianBinaryWriter
 from ..helpers.ForceCRC32 import bit_reverse, multiply_mod, reciprocal_mod, pow_mod, MASK
 from zlib import crc32
-
+from collections import namedtuple
 from .. import config
+
+Surroundings = namedtuple('Surroundings', ['prev', 'next'])
 
 class BlockInfo:
     __slots__ = ['uncompressedSize', 'compressedSize', 'flags', 'origin', 'shared']
@@ -30,6 +32,9 @@ class DirectoryInfoFS:
         self.flags = flags
         self.path = path
 
+    def __repr__(self):
+        return f"<{self.path} ({self.size} B) at {self.offset} flags={self.flags}>"
+
 class BlockMeta:
     __slots__ = ['n', 'block_offset', 'base', 'origin']
     def __init__(self, n: int, block_offset: int, base: int, origin: int):
@@ -37,6 +42,9 @@ class BlockMeta:
         self.block_offset = block_offset
         self.base = base
         self.origin = origin
+
+    def __repr__(self):
+        return f"<block {self.n} starting at {self.block_offset} base={self.base} origin={self.origin}>"
 
 class FileBlocksMeta:
     __slots__ = ['start', 'end', 'size']
@@ -164,7 +172,6 @@ class BlockStream:
         self.modify_crc = kwargs.get("modify_crc", False)
         self.crc32 = None
         self.base_stream: EndianBinaryReader = stream
-        self.blocks_reader = None
         self.Crypto = crypto_funcs
         self.BaseOffset = offset
         self.Position = 0
@@ -270,7 +277,7 @@ class BlockStream:
         self.base_stream.Position = self.BaseOffset
         if self.modify_crc and self.crc32 is None:
             self.crc32 = self.crc32_from_blocks(self.base_stream, self.m_BlocksInfo)
-            print(f"Original CRC32 is {hex(self.crc32)}")
+            #print_debug(f"Original CRC32 is {hex(self.crc32)}")
         self.base_stream.Position = self.BaseOffset
 
 
@@ -284,7 +291,7 @@ class BlockStream:
     def create_crc_patch_block(self, stream: Union[EndianBinaryWriter, EndianBinaryReader],
                                block_infos: list[BlockInfo]) -> Tuple[bytes, BlockInfo]:
         modded_crc = self.crc32_from_blocks(stream, block_infos)
-        #print(f"Patched CRC32 is {hex(modded_crc)}")
+        #print_info(f"Patched CRC32 is {hex(modded_crc)}")
         if modded_crc == self.crc32:
             return (None, None)
 
@@ -295,7 +302,7 @@ class BlockStream:
         patch_bytes = bytearray([(bit_reverse(delta) >> (i * 8)) & 0xFF for i in range(4)])
 
         #new_crc = crc32(patch_bytes, modded_crc) & MASK # pad for correction
-        #print(f"New CRC {hex(new_crc)} {('!' if new_crc != self.crc32 else '=')}= supposed {hex(self.crc32)}")
+        #print_info(f"New CRC {hex(new_crc)} {('!' if new_crc != self.crc32 else '=')}= supposed {hex(self.crc32)}")
         return (patch_bytes, BlockInfo(4, 4, 0, None, False))
 
 
@@ -326,9 +333,10 @@ class BlockStream:
             if patch_data:
                 data_writer.Position = pos
                 data_writer.write(patch_data)
-                blockinfos[-1].uncompressedSize += patch_block.uncompressedSize
-                #dirinfos[-1].size += patch_block.uncompressedSize
-                #blockinfos.append(patch_block)
+                #blockinfos[-1].uncompressedSize += patch_block.uncompressedSize
+                # this assumes the file is really last but we can also recompress the last block
+                dirinfos[-1].size += patch_block.uncompressedSize
+                blockinfos.append(patch_block)
 
         meta_stream = EndianBinaryWriter(b'\0' * 16) # uncompressedDataHash
         self.write_block_infos(meta_stream, blockinfos)
@@ -437,7 +445,7 @@ class BlockStream:
             start = self.block_by_offset(di.offset)
             end = self.block_by_offset(di.offset + di.size, True)
             self.file_blocks_map[di.path] = FileBlocksMeta(start, end, di.size)
-        #print("Borders: ", end='')
+        #print_debug("map_directory_to_blocks(): ", end='')
         for i, di in enumerate(self.m_DirectoryInfo):
             # NOTE: this assumes continuous file layout corresponding to an ordered dict.
             # We check if the end and start blocks of the files are the same.
@@ -446,12 +454,12 @@ class BlockStream:
                 blocks.start.n):
                 # the case of having the last file's end and the current's start overlap
                 self.m_BlocksInfo[blocks.start.n].shared = True
-                #print(i, blocks.start.n, self.m_BlocksInfo[blocks.start.n], end=' ')
+                #print_debug(i, blocks.start.n, self.m_BlocksInfo[blocks.start.n], end=' ')
             elif i < len(self.m_DirectoryInfo) - 2 and blocks.end.n == (
                     self.file_blocks_map[self.m_DirectoryInfo[i+1].path].start.n):
                 # the case of having the current file's end and the next's start overlap
                 self.m_BlocksInfo[blocks.end.n].shared = True
-                #print(i, blocks.end.n, self.m_BlocksInfo[blocks.end.n], end='')
+                #print_debug(i, blocks.end.n, self.m_BlocksInfo[blocks.end.n], end='')
         pass
 
 
@@ -468,9 +476,8 @@ class BlockStream:
 
 
     def get_size_from_block_range(self, own_range: FileBlocksMeta):
-        return (self.m_BlocksInfo[own_range.start.n].uncompressedSize - own_range.start.block_offset) + (
-                    sum([self.m_BlocksInfo[i].uncompressedSize for i in range(
-                        own_range.start.n + 1, own_range.end.n)])) + own_range.end.block_offset
+        return (sum([self.m_BlocksInfo[i].uncompressedSize for i in range(
+                        own_range.start.n, own_range.end.n)])) + own_range.end.block_offset - own_range.start.block_offset
 
 
     def is_uncompressed_block_range(self, own_range: FileBlocksMeta):
@@ -483,11 +490,18 @@ class BlockStream:
     def get_file_reader(self, name: str):
         blocks: FileBlocksMeta = self.file_blocks_map[name]
         real_size = blocks.size
-        #real_size = self.get_size_from_block_range(blocks) # NOTE: for asserts
-        if config.BIG_OBJECT_GUARD > 0 and real_size > config.BIG_OBJECT_GUARD:
+        """
+        assert blocks.start.n <= blocks.end.n < len(self.m_BlocksInfo), (
+            "BlockStream file is not loaded or incorrect "+
+            f"{blocks.start.n} < {blocks.end.n} < {len(self.m_BlocksInfo)}")
+        assert real_size == self.get_size_from_block_range(blocks), (
+            f"{real_size} != {self.get_size_from_block_range(blocks)}")
+        """
+        if abs(config.BIG_OBJECT_GUARD) > 0 and real_size > abs(config.BIG_OBJECT_GUARD):
             # Return wrapped (to preserve name and file size) BlockStream since it's too big to unpack.
-            # We will only read it on actual read_bytes() operations.
-            return FileBlocksReader(self, name, real_size)
+            # We will only read it on actual read_bytes() operations and if value is negative.
+            print_warning(f"{name} is too big {'ignoring' if config.BIG_OBJECT_GUARD > 0 else 'assigning block reader'}")
+            return None if config.BIG_OBJECT_GUARD > 0 else FileBlocksReader(self, name, real_size)
         if self.is_uncompressed_block_range(blocks):
             # If it's entirely uncompressed read directly from the disk
             return EndianBinaryReader(self.base_stream, offset=self.base_stream.Position,
@@ -502,16 +516,24 @@ class BlockStream:
             return EndianBinaryReader(temp_file, offset=0)
 
 
+    def write_block(self, blocks_info, index: int, writer: EndianBinaryWriter):
+        """Writes a block without any modifications"""
+        uncompressedSize = blocks_info[index].uncompressedSize
+        compressedSize = blocks_info[index].compressedSize
+        block_flags = blocks_info[index].flags
+        block_data = self.read_block(self.base_stream, blocks_info, index)
+        written = writer.write(block_data)
+        assert compressedSize == written, "write_owned_block(): not all written"
+        return BlockInfo(uncompressedSize, compressedSize, block_flags, None, False)
+
+
     def write_owned_block(self, blocks_info, index: int, writer: EndianBinaryWriter,
-                          own_range: FileBlocksMeta, keep_last=False):
+                          own_range: FileBlocksMeta):
+        """Writes a block data that only belong to the current file"""
         uncompressedSize = blocks_info[index].uncompressedSize
         compressedSize = blocks_info[index].compressedSize
 
-        if keep_last and index == own_range.end.n:
-            is_decompressed = False
-            block_data = self.read_block(self.base_stream, blocks_info, index)
-        else:
-            block_data, is_decompressed = self.read_owned_block(
+        block_data, is_decompressed = self.read_owned_block(
                 self.base_stream, blocks_info, index, own_range, force_decompress=False)
 
         block_flags = blocks_info[index].flags
@@ -525,22 +547,37 @@ class BlockStream:
         return BlockInfo(uncompressedSize, compressedSize, block_flags, None, False)
 
 
-    def write_original_file(self, name: str, writer: EndianBinaryWriter, skip_first=False, keep_last=False):
+    def write_original_file(self, name: str, writer: EndianBinaryWriter, unchanged:Surroundings):
         own_range: FileBlocksMeta = self.file_blocks_map[name]
         blocks = []
         real_size = self.get_size_from_block_range(own_range)
         self.base_stream.Position = own_range.start.origin
         for index in range(own_range.start.n, own_range.end.n + 1):
-            if skip_first and index > 0 and self.m_BlocksInfo[index].shared and index == own_range.start.n:
-                # Always drop a first shared block if the file before is unchanged
+            if self.m_BlocksInfo[index].shared and own_range.start.n != own_range.end.n and (
+                unchanged.prev) and index > 0 and index == own_range.start.n:
+                # We always drop a first shared block if the file before is unchanged
                 # since it's equal to the last block of that file
-                if index < own_range.end.n:
-                    self.base_stream.Position = self.m_BlocksInfo[index + 1].origin
-                #print(f"Skipping first block {index} for {name}...")
+                print_debug(f" Skipping unmodified block {index} for original {name}...")
                 continue
-            block_info = self.write_owned_block(self.m_BlocksInfo, index, writer, own_range, keep_last=keep_last)
+            self.base_stream.Position = self.m_BlocksInfo[index].origin
+            # NOTE: Cases when we modify a shared block even if asked to write it directly:
+            # 1) the previous file changed and the index is the same as the starting
+            # 2) the next file changed and the index is the same as the ending
+            # 3) the file is contained within a single shared block
+            if self.m_BlocksInfo[index].shared and not unchanged.prev and (
+                index == own_range.start.n) or own_range.start.n == own_range.end.n or (
+                    not unchanged.next and index == own_range.end.n):
+                print_debug(f" Writing modified block {index} for original {name}...")
+                block_info = self.write_owned_block(self.m_BlocksInfo, index, writer, own_range)
+            else:
+                if index in [own_range.start.n + 1, own_range.end.n-1, own_range.end.n] or (
+                            own_range.end.n - own_range.start.n < 6):
+                    append = '\n...' if own_range.end.n - own_range.start.n >= 6 and index < own_range.end.n-1 else ''
+                    print_debug(f" Writing unmodified block {index} for original {name}...{append}")
+                block_info = self.write_block(self.m_BlocksInfo, index, writer)
             if block_info:
                 blocks.append(block_info)
+
         return (blocks, real_size)
 
 
@@ -553,7 +590,7 @@ class BlockStream:
         if block_flags is None:
             block_flags = 0
         length = 0
-        ch_i = own_range.start.n
+        index = own_range.start.n
         blocks = []
 
         while length < len(data):
@@ -563,11 +600,12 @@ class BlockStream:
             compressedSize = len(block_data)
             written = writer.write(block_data)
             assert compressedSize == written, "write_file(): not all data written"
-            ch_i += 1
             blocks.append(
                 BlockInfo(uncompressedSize, compressedSize, block_flags, None, False)
             )
             length += block_size
+            print_debug(f" Writing new block (part of {index}) for modified {name}...")
+            index += 1
 
         return (blocks, size)
 
@@ -578,41 +616,44 @@ class BlockStream:
         dirinfos = []
         offset = 0
 
-        changed_array = []
+        unchanged_array = []
         for name, f in files:
-            changed_array.append(getattr(f, "is_changed", False))
+            own_range = self.file_blocks_map[name]
+            unchanged_array.append(not getattr(f, "is_changed", False) and own_range.start.n != own_range.end.n)
 
         i = 0
         for name, f in files:
-            if changed_array[i]:
-                if isinstance(f, BytesIO):
-                    data.seek(0)
-                    data = data.read()
-                else:
-                    data = f.save()
+            if not unchanged_array[i]:
+                data = f.save()
                 cur_blockinfos, real_size = self.write_file(name, data, writer, block_flags, block_size)
             else:
-                skip_first = not changed_array[i-1] if i > 0 else True
-                keep_last = not changed_array[i+1] if i < len(changed_array) - 1 else True
                 cur_blockinfos, real_size = self.write_original_file(
-                    name, writer, skip_first=skip_first, keep_last=keep_last)
+                    name, writer, unchanged=Surroundings(
+                        unchanged_array[i-1] if i > 0 else True,
+                        unchanged_array[i+1] if i < len(unchanged_array) - 1 else True
+                    )
+                )
             blockinfos += cur_blockinfos
             i += 1
 
             dirinfos.append(DirectoryInfoFS(offset, real_size, f.flags, name))
             offset += real_size
+
         return (dirinfos, blockinfos)
 
 
     def read_block(self, stream: Union[EndianBinaryReader, EndianBinaryWriter],
                    blocks_info: list[BlockInfo], index: int) -> bytes:
+        """Reads a block without any modifications (not auto-positioned)"""
         if not (0 <= index <= len(blocks_info) - 1):
-            raise Exception("read_owned_block(): index is outside of m_BlocksInfo")
+            raise Exception(f"read_block(): index = {index} is outside of m_BlocksInfo length")
         return stream.read_bytes(blocks_info[index].compressedSize)
 
 
     def read_owned_block(self, stream, blocks_info, index: int, own_range: FileBlocksMeta=None,
                          force_decompress: bool=True) -> Tuple[bytes, bool]:
+        """Reads a block and truncates its unpacked data so that only
+           the data in the current file is returned"""
         data = self.read_block(stream, blocks_info, index)
         is_shared = blocks_info[index].shared
         is_decompressed = False
@@ -626,13 +667,14 @@ class BlockStream:
         if own_range and is_shared: # last and first blocks will never be shared unless mixed
             if (own_range.end.n == own_range.start.n): # always cut mixed blocks
                 data = data[own_range.start.block_offset : own_range.end.block_offset]
-                #print(f"cut single index = {index} data[{own_range.start.block_offset} : {own_range.end.block_offset}]: {data[own_range.start.block_offset : own_range.start.block_offset + 8]}")
+                #print_debug(f"cut single index = {index} data[{own_range.start.block_offset} : {own_range.end.block_offset}]: {data[:8]}")
             elif index == own_range.end.n:
                 data = data[:own_range.end.block_offset] # last chink borderd right
-                #print(f"cut end index = {index} data[0 : {own_range.end.block_offset}]: {data[:8]}")
+                #print_debug(f"cut end index = {index} data[0 : {own_range.end.block_offset}]: {data[:8]}")
             elif index == own_range.start.n:
                 data = data[own_range.start.block_offset:] # first chink borderd left
-                #print(f"cut start index = {index} data[{own_range.start.block_offset} : {len(data)}]: {data[-8:]}")
+                #print_debug(f"cut start index = {index} data[{own_range.start.block_offset} : {len(data)}]: {data[:8]}")
+
         return (data, is_decompressed)
 
 
@@ -679,7 +721,7 @@ class BlockStream:
                 if CompressionHelper.supports_lzham():
                     data = CompressionHelper.compress_lzham(data)
                 else:
-                    #print("UnityFS - Packer: LZHAM not implemented, using LZ4")
+                    #print_debug("UnityFS - Packer: LZHAM not implemented, using LZ4")
                     data = CompressionHelper.compress_lz4hc(data)
                     flags = CompressionFlags.LZ4HC | (flags & ~ArchiveFlags.CompressionTypeMask)
         if self.Crypto is not None and flags & ArchiveFlags.UnityCNEncryption and index is not None:

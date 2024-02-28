@@ -314,7 +314,7 @@ class EndianBinaryReader_Streamable(EndianBinaryReader):
         return ret
 
     def close(self, stream=None):
-        #print(f"Closing stream {stream}")
+        #print_debug(f"Closing stream {stream}")
         if stream is None:
             if self.stream:
                 self.stream.close()

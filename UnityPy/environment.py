@@ -51,6 +51,8 @@ class Environment:
         #self.fs = kwargs.get("fs", None) or LocalFileSystem()
         self.local_files = []
         self.local_files_simple = []
+        self.ignore_dependencies = kwargs.get("ignore_dependencies", False)
+        self.extended_search = kwargs.get("extended_search", False)
         globalmap = kwargs.get("globalmap", None)
         if globalmap:
             self.GLOBAL_FILE_MAP.update(globalmap)
@@ -83,7 +85,7 @@ class Environment:
     @staticmethod
     def prepare_global_map(assets, progress_fn=lambda r: r, map_name="globalmap.json", encoding="utf-8-sig"):
         import json
-        print("Preparing file map...")
+        print_info("Preparing file map...")
         GLOBAL_MAP = {}
         if not os.path.isfile("globalmap.json"):
             for file_name in progress_fn(assets):
@@ -163,6 +165,8 @@ class Environment:
                 if not efile or not os.path.isfile(efile):
                     return None
                 else:
+                    if self.ignore_dependencies:
+                        return None
                     typ, reader = ImportHelper.check_file_type(efile)
                     if typ == FileType.BundleFile:
                         f = ImportHelper.parse_file(
@@ -177,14 +181,14 @@ class Environment:
                 name = file
                 if file and not os.path.isfile(file):
                     # should have fallback, because why do it manually...
-                    if config.EXTENDED_SEARCH:
+                    if config.EXTENDED_SEARCH or self.extended_search:
                         file = search_resource_file(self._cwd, file)
                     else:
                         return None
                 if file and os.path.isfile(file):
                     file = open(file, "rb")
                 else:
-                    #print(name, "not found anywhere")
+                    #print_debug(name, "not found anywhere")
                     return None
 
         typ, reader = ImportHelper.check_file_type(file)
@@ -198,6 +202,8 @@ class Environment:
         if typ == FileType.ZIP:
             f = self.load_zip_file(file)
         else:
+            if self.ignore_dependencies and is_dependency:
+                return None
             f = ImportHelper.parse_file(
                     reader, self, name=stream_name, typ=typ,
                     is_dependency=is_dependency, **kwargs
@@ -472,8 +478,9 @@ class Environment:
         else:
             raise FileNotFoundError(f"File {name} not found in {self.path}")
 
-        f = self.load_file(fp, name=name, is_dependency=is_dependency)
-        return f
+        if self.ignore_dependencies and is_dependency:
+            return None
+        return self.load_file(fp, name=name, is_dependency=is_dependency)
 
 
 def simplify_name(name: str) -> str:

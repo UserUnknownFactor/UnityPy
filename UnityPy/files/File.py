@@ -90,7 +90,8 @@ class File(object):
 
     def close(self):
         for f in self.files:
-            self.files[f].close()
+            if self.files[f]:
+                self.files[f].close()
         self.files = {}
         self.environment = None
         self.parent = None
@@ -150,7 +151,8 @@ class File(object):
                     self.environment.register_cab(name, f)
 
             # required for BundleFiles
-            f.flags = getattr(embedded_file, "flags", 0)
+            if f:
+                f.flags = getattr(embedded_file, "flags", 0)
             self.files[name] = f
 
     def get_writeable_cab(self, name: str = None, writer: EndianBinaryWriter = None):

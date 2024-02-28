@@ -25,7 +25,7 @@ def ToHalf(*args) -> float:
         raise ValueError("Invalid amount of arguments")
 
     if math.isnan(val):
-        # print('Nan')
+        #print_debug('ToHalf(): NaN')
         return 0
     elif math.isinf(val):
         return MaxValue
@@ -90,7 +90,7 @@ def ToHalf(*args) -> float:
 #                     e -= 1
 #                 e += 1
 #                 f &= ~0x00000400
-#         # print(s,e,f)
+#         # print_debug(s,e,f)
 #         elif e == 31:
 #             if f == 0:
 #                 return int((s << 31) | 0x7f800000)

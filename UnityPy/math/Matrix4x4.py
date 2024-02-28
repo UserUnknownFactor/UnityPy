@@ -25,7 +25,7 @@ class Matrix4x4:
     def __eq__(self, other):
         if not isinstance(other, Matrix4x4):
             return False
-        print()
+        return all([self.M[i] == other.M[i] for i in range(16)])
 
     def __mul__(lhs, rhs):
         res = Matrix4x4(*([0] * 16))

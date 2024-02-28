@@ -68,7 +68,8 @@ def get_resource_data(*args):
     else:
         raise TypeError(f"3 or 4 arguments required, but {len(args)} given")
     if not reader:
-        raise FileNotFoundError(f"Resource file {(basename + ' ') if basename else ''}not found or reader unspecified")
+        print_warning(f"Resource file {(basename + ' ') if basename else ''}not found or no reader specified")
+        return None
 
     reader.Position = offset
     return reader.read_bytes(size)
@@ -76,7 +77,7 @@ def get_resource_data(*args):
 def search_resource_file(path, name):
     #nocase = lambda w: ''.join((f'[{c.lower()}{c.upper()}]' if c.isalpha() else c) for c in w)
     #name = nocase(name)
-    #print(f"search_resource_file({path}, {name})")
+    #print_debug(f"search_resource_file({path}, {name})")
     files = glob.glob(os.path.join(path, "**", name), recursive=True)
     return files[0] if len(files) else None
 

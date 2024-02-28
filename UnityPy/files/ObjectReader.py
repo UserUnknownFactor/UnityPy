@@ -161,17 +161,16 @@ class ObjectReader:
                 try:
                     obj = cls(self)
                 except Exception as e:
-                    if return_typetree_on_error:
-                        print(f"Error during the parsing of <{self.type.name} " +
+                    if return_typetree_on_error and config.ENABLE_TYPETREEHELPER_FALLBACK:
+                        print_info(f"Error during the parsing of <{self.type.name} " +
                             f"path_id: {self.path_id}; asset_file: {self.assets_file.name}>")
-                        print(e)
-                        if config.ENABLE_TYPETREEHELPER_FALLBACK:
-                            print("Trying to return its TypeTree...")
+                        print_debug(e)
+                        print_info("Trying to return its TypeTree...")
                     else:
-                        raise e
+                        raise
             else:
                 obj = cls(self)
-        if not obj and config.ENABLE_TYPETREEHELPER_FALLBACK:
+        if not obj and (return_typetree_on_error and config.ENABLE_TYPETREEHELPER_FALLBACK):
             obj = self.read_typetree(wrap=True)
         self._last_read_pos = self.reader.Position
         return obj
@@ -190,6 +189,9 @@ class ObjectReader:
             self.data = data.save()
         else:
             self.data = data
+        self.mark_changed()
+
+    def mark_changed(self):
         if self.assets_file:
             self.assets_file.mark_changed()
 

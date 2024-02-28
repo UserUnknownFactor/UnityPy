@@ -4,6 +4,7 @@ from UnityPy import Environment
 from UnityPy.enums import ClassIDType as CID
 from UnityPy.streams import EndianBinaryReader, EndianBinaryWriter
 from UnityPy.enums import TextureFormat
+from UnityPy.helpers import TypeTreeHelper
 from functools import partial
 from UnityPy.math import Vector2, Rectangle
 from PIL import Image
@@ -145,24 +146,26 @@ def main():
             if not fname: return [obj.path_id]
             if ".json" == os.path.splitext(fname)[1]:
                 script = data.m_Script.read()
-                nodes = ASSEMBLY_TREES[script.m_ClassName]
-                with open(fname, "r", encoding="utf-8-sig") as dat:
-                    sjson = None
-                    try:
-                        sjson = json.load(dat)
-                    except Exception as e:
-                        print("---- ERROR READING JSON ----\n\n{e} from {fname}")
-                    if not sjson:
-                        os.exit(2)
-                    obj.save_typetree(sjson, nodes)
+                if script:
+                    nodes = ASSEMBLY_TREES[script.m_ClassName]
+                    with open(fname, "r", encoding="utf-8-sig") as dat:
+                        sjson = None
+                        try:
+                            sjson = json.load(dat)
+                        except Exception as e:
+                            print(f"---- ERROR READING JSON ----\n\n{e} from {fname}")
+                        if not sjson:
+                            sys.exit(2)
+                        obj.save_typetree(sjson, nodes, all_trees=ASSEMBLY_TREES)
             else:
                 with open(fname, "rb") as dat:
                     obj.set_raw_data(dat.read())
         return [obj.path_id]
 
-    print(f"Output folder is {OUT_PATH}")
+    print(f"Output folder is {os.path.abspath(OUT_PATH)}")
+    GLOBAL_MAP = Environment.prepare_global_map(ASSETS, tqdm)
     for file_name in ASSETS:
-        am = Environment()
+        am = Environment(globalmap=GLOBAL_MAP, ignore_dependencies=True, extended_search=True)
         am.out_path = os.path.dirname(OUT_PATH + file_name.replace(ROOT, '').replace("\\original\\", ''))
         enc_folder = "StreamingAssets"
         is_encrypted = enc_folder in os.path.abspath(file_name)
@@ -172,14 +175,15 @@ def main():
         else:
             asset = am.load_file(file_name, name=file_name) #, dump=True)
         if asset is not None:
-            print(f"Processing {file_name}...")
+            print(f"Processing {file_name.replace(ROOT, '')}...")
             for item in tqdm(list(asset.get_filtered_assets(TYPES)), desc=asset.name):
                 obj_modify(item, item.assets_file.name)
             gen = get_writer_func(key) if is_encrypted else None
             opath = os.path.join(am.out_path, enc_folder) if is_encrypted else None
             am.save(pack="none", writer_generator=gen, out_path=opath)
             #am.save(pack="lz4", writer_generator=get_writer_func(key))
-
+            asset.close()
+        am.close() # to save memory
 
 
 if __name__ == '__main__':

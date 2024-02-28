@@ -302,7 +302,7 @@ def read_value(nodes: List[TypeTreeNode], reader: "ObjectReader",
                                 else:
                                     value = {}
                             else:
-                                print(f"No type definition for field {nodes[clz][0].m_Name} of type " +
+                                print_debug(f"No type definition for field {nodes[clz][0].m_Name} of type " +
                                     f"{nodes[clz][0].m_Type}, error in the TypeTree or an empty type")
                                 value = {}
                         else:
@@ -326,7 +326,7 @@ def read_value(nodes: List[TypeTreeNode], reader: "ObjectReader",
             value_out = f"{value.__class__.__name__} of length {len(value)}"
         else:
             value_out = value
-        print(f"\"{node.m_Name}\": {value_out} (offset: {pos2} - {pos1} = {pos2 - pos1})" +
+        print_debug(f"\"{node.m_Name}\": {value_out} (offset: {pos2} - {pos1} = {pos2 - pos1})" +
               f"\nlast data: {[value[k] for k in value.keys()[-2:]]}" if value else '')
     return value
 
@@ -452,7 +452,7 @@ def write_value(value: Union[Any, int, str], nodes: List[TypeTreeNode],
             case _type if _type.startswith("PPtr<"):
                 # accelerate pointers write
                 writer.write_int(value["m_FileID"])
-                write_common_type(nodes[i.value + 2].m_Type, value["m_PathID"], writer)
+                write_common_type(value["m_PathID"], nodes[i.value + 2].m_Type, writer)
                 i.value += 2
             case "string":
                 writer.write_aligned_string(value)
@@ -525,7 +525,7 @@ def write_managed_ref_registry(value, writer: EndianBinaryWriter,
         writer.write_aligned_string(item["type"]["ns"])
         writer.write_aligned_string(item["type"]["asm"])
         ref_nodes = None
-        ref_class = None
+        ref_class = item["type"]["class"]
         if rid is not None and rid >= 0 and rid < (1 << 32):
             ref_class = ClassIDType(rid).name
         if all_trees and ref_class and ref_class in all_trees:

@@ -47,11 +47,11 @@ def brute_force_key(
     matches = pattern.findall(data)
     for i, key in enumerate(matches):
         if verbose:
-            print(f"Trying {i + 1}/{len(matches)} - {key}")
+            print_info(f"Trying {i + 1}/{len(matches)} - {key}")
         signature = decrypt_key(key_sig, data_sig, key)
         if signature == UNITY3D_SIGNATURE:
             if verbose:
-                print(f"Found key: {key}")
+                print_info(f"Found key: {key}")
             return key
     return None
 

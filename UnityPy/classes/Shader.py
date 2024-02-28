@@ -110,7 +110,7 @@ class Shader(NamedObject):
             self.m_ShaderIsBaked = reader.read_bool()
             reader.align_stream()
             #except Exception as e:
-                #print(e)
+                #print_debug(e)
                 #reader.Position = details_pos
                 #self.the_rest = reader.read_the_rest()
         else:

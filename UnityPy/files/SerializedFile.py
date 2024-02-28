@@ -148,11 +148,11 @@ class SerializedFile(File.File):
                     cls = getattr(classes, obj.type.name, None)
                     self.assetbundle = cls(obj)
                 except Exception as e:
-                    print(f"Error during the parsing of <{obj.type.name} path_id: {obj.path_id}; " +
+                    print_info(f"Error during the parsing of <{obj.type.name} path_id: {obj.path_id}; " +
                         f"asset_file: {obj.assets_file.name}>")
-                    print(e)
+                    print_debug(str(e))
                     if config.ENABLE_TYPETREEHELPER_FALLBACK:
-                        print("Trying to return its TypeTree...")
+                        print_info("Trying to return its TypeTree...")
                         self.assetbundle = obj.read_typetree(wrap=True)
                     else:
                         self.assetbundle = None
@@ -186,7 +186,9 @@ class SerializedFile(File.File):
             self.environment.load_file(dependency, True)
 
     def get_ref_typetrees(self, append_ns: bool=False) -> dict:
-        return {v.m_NameSpace + '.' + v.m_ClassName if append_ns else v.m_ClassName: v.nodes for v in self.reference_types}
+        return {v.m_NameSpace + '.' + v.m_ClassName if append_ns else (
+            v.m_ClassName): v.nodes for v in self.reference_types if hasattr(
+            v, "m_ClassName") and hasattr(v, "m_NameSpace")}
 
     def get_all_typetrees(self, append_ns: bool=False) -> dict:
         if self._type_trees_cache is not None: # since we can call it often

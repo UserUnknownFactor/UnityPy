@@ -14,7 +14,7 @@ class MonoBehaviour(Behaviour):
             try:
                 self.read_typetree(all_trees=self.assets_file.get_all_typetrees())
             except TypeTreeError as e:
-                print(f"failed to read TypeTree for {self.name} [path_id={self.path_id}]: {e}")
+                print_info(f"failed to read TypeTree for {self.name} [path_id={self.path_id}]: {e}")
                 self.assets_file._use_type_trees = False
                 self.raw_monobehaviour = self.reader.read_the_rest()
         else:

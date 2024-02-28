@@ -107,8 +107,7 @@ def get_image_from_texture2d(texture_2d, flip=True) -> Image.Image:
     width = texture_2d.m_Width
     height = texture_2d.m_Height
     if width == 0 or height == 0:
-        print(f"Empty Texture2D (asset: {texture_2d.assets_file.name}; path_id: {texture_2d.path_id})")
-        return None
+        raise Exception("Empty Texture2D")
 
     texture_format = (
         texture_2d.m_TextureFormat
@@ -116,22 +115,20 @@ def get_image_from_texture2d(texture_2d, flip=True) -> Image.Image:
         else TF(texture_2d.m_TextureFormat)
     )
 
-    image_data = bytes(texture_2d.image_data)
+    image_data = texture_2d.image_data
     if not image_data:
-        print(f"Can't retrieve Texture2D (asset: {texture_2d.assets_file.name}; path_id: {texture_2d.path_id}; path: {texture_2d.m_StreamData.path})")
-        return None
+        raise Exception(f"Can't retrieve Texture2D {'; path: ' + texture_2d.m_StreamData.path if hasattr(texture_2d, 'm_StreamData') else ''})")
 
     return parse_image_data(
-        image_data,
+        bytes(image_data),
         width,
         height,
         texture_format,
         texture_2d.version,
         texture_2d.platform,
         getattr(texture_2d, "m_PlatformBlob", None),
-        flip,
+        flip
     )
-
 
 def parse_image_data(
     image_data: bytes,

@@ -80,7 +80,8 @@ class PPtr:
         else:
             self._obj = None
             if self.external_name:
-                print(f"Couldn't find dependency: {self.external_name}\n" +
+                if self.assets_file.environment.ignore_dependencies: return None
+                print_warning(f"Couldn't find dependency: {self.external_name}\n" +
                 "You can try to load it manually to the environment in advance\n"
                 f"  for Web-&BundleFiles: env.load_file(\"{self.external_name}\")\n" +
                 f"  for SerializedFiles: env.register_cab(\"{self.external_name}\")\n"+
@@ -88,7 +89,7 @@ class PPtr:
                 if WARNED_NOTFOUND_ONCE and self.external_name not in WARNED_NOTFOUND:
                     WARNED_NOTFOUND.append(self.external_name)
             elif self.path_id:
-                print(f"Couldn't find referenced object with path_id: {self.path_id} " #+
+                print_warning(f"Couldn't find referenced object with path_id: {self.path_id} " #+
                     #f"and name: {getattr(self, 'name', '')}"
                 )
 
