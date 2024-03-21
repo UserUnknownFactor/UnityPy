@@ -40,7 +40,7 @@ def set_globals(endian, version):
             # do it only once per run
             NODE_STRUCT += 'Q'
             NODE_STRUCT_KEYS.append("m_RefTypeHash")
-            NODE_STRUCT_MODIFIED = True
+        NODE_STRUCT_MODIFIED = True
         NODE_STRUCT = Struct(NODE_STRUCT)
 
 reset_globals()

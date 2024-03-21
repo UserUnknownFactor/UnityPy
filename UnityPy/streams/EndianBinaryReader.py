@@ -1,6 +1,6 @@
 from struct import Struct, unpack
 import re
-from typing import List, Union, Callable, TYPE_CHECKING
+from typing import Type, List, Union, Callable, TYPE_CHECKING
 from io import BytesIO, IOBase, SEEK_END, SEEK_SET, SEEK_CUR
 from sys import byteorder
 from ..exceptions import sanity_check, ReadingPastObject
@@ -141,10 +141,26 @@ class EndianBinaryReader:
     def read_byte_array(self) -> bytes:
         return self.read(self.read_int())
 
-    def read_array(self, command, length: int) -> list:
-        if not length:
-            return []
+    def read_array(self, command, length: int = None) -> list:
+        if length is None:
+            length = self.read_u_int()
         return [command() for _ in range(length)]
+
+    def read_vector(self, command) -> list:
+        length = self.read_u_int()
+        sanity_check("read_vector", length)
+        if command is None: # byte/char vector
+            return self.read(length)
+        return [command() for _ in range(length)]
+
+    def read_map(self, command1, command2) -> dict:
+        length = self.read_u_int()
+        sanity_check("read_map", length)
+        result = {}
+        for _ in range(numNonModifiableTextures):
+            key = command1() # this is possible since Object impl. __hash__ and __eq__
+            result[key] = command2()
+        return result
 
     def read_array_struct(self, param: str, length: int = None) -> list:
         if not length:

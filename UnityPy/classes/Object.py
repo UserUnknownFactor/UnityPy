@@ -105,13 +105,18 @@ class Object(object):
         return f"<{self.__class__.__name__} path_id={self.path_id}>"
 
     def __hash__(self):
+        if self.assets_file and hasattr(self.assets_file, "name"):
+            return hash((self.assets_file.name, self.path_id))
         return hash(self.path_id)
 
     def __eq__(self, other):
+        same_file = True
+        if self.assets_file and other.assets_file and hasattr(self.assets_file, "name") and hasattr(other.assets_file, "name"):
+            same_file = (self.assets_file.name == other.assets_file.name)
         if isinstance(other, Object):
-            return self.path_id == other.path_id
+            return self.path_id == other.path_id and same_file
         elif isinstance(other, int):
-            return self.path_id == other
+            return self.path_id == other and same_file
         return False
 
 

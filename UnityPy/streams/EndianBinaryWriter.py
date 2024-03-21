@@ -111,7 +111,7 @@ class EndianBinaryWriter:
     def write_aligned_string(self, value: [str, bytes, bytearray], encoding: str="utf-8"):
         if not isinstance(value, (bytes, bytearray)):
             value = value.encode(encoding, "surrogatepass")
-        self.write_int(len(value))
+        self.write_u_int(len(value))
         self.write(value)
         self.align_stream()
 
@@ -165,12 +165,12 @@ class EndianBinaryWriter:
 
     def write_array(self, command, value: list, write_length: bool = True):
         if write_length:
-            self.write_int(len(value))
+            self.write_u_int(len(value))
         for val in value:
             command(val)
 
     def write_byte_array(self, value: bytes):
-        self.write_int(len(value))
+        self.write_u_int(len(value))
         self.write(value)
 
     def write_boolean_array(self, value: list):
