@@ -10,7 +10,7 @@ from UnityPy.helpers.TypeTreeHelper import TypeTreeNode
 from tqdm import tqdm
 import json
 
-TYPES = [CID.TextAsset, CID.MonoBehaviour, CID.Texture2D, CID.Shader]
+TYPES = [CID.TextAsset, CID.MonoBehaviour, CID.Texture2D, CID.Shader, CID.VideoClip]
 BUILD_SCENE_TREE = True
 
 ROOT = os.path.abspath(os.getcwd()) # base directory
@@ -71,9 +71,9 @@ def main():
         am.ignore_dir_lvls = 2
         if BUILD_SCENE_TREE:
             am.process(export_obj, ['GameObject'])
-            #with open(file_name + "_scenetree.txt", "w", encoding="utf-8") as st:
-                #for line in parent_root.print_tree():
-                    #st.write(line + '\n')
+            with open(file_name + "_scenetree.txt", "w", encoding="utf-8") as st:
+                for line in parent_root.print_tree():
+                    st.write(line + '\n')
         for item in tqdm(list(asset.get_filtered_assets(TYPES))):
             export_obj(item, item.assets_file.name)
 
@@ -156,6 +156,20 @@ def export_obj(obj, asset: str) -> list:
                 print(repr(e), "in file:", objname, "object type:", objfmt)
         return [obj.path_id]
 
+    elif objfmt == CID.VideoClip:
+        fp = f"{make_path(DST, 'VideoClip', os.path.split(fname)[0], objname).strip()}.mp4"
+        if not os.path.isfile(fp):
+            try:
+                with open(fp, "wb") as f:
+                    video = data.video
+                    if len(video):
+                        f.write(video)
+            except Exception as e:
+                if data.name is not None:
+                    objfmt = data.name
+                print(repr(e), "in file:", objname, "object type:", objfmt)
+        return [obj.path_id]
+
     elif objfmt == CID.Sprite:
         fp = f"{make_path(DST, 'Sprite', fbase, fname)}.png"
         if not os.path.isfile(fp):
@@ -180,13 +194,6 @@ def export_obj(obj, asset: str) -> list:
     elif objfmt == CID.MonoBehaviour:
         is_raw = True
         script = None
-        if obj.serialized_type.nodes:
-            try:
-                tree = obj.read_typetree()
-                is_raw = False
-            except Exception as e:
-                print("Error", str(e), "in", objname)
-                pass
         if not data.m_Script:
             # RIP, no referenced script, can only dump raw
             pass
@@ -195,31 +202,50 @@ def export_obj(obj, asset: str) -> list:
             cname = script.m_ClassName
             #if "TextMeshProUGUI" not in cname:
                 #return [obj.path_id]
-            if not is_raw or not script or (
-                ASSEMBLY_TREES and cname not in ASSEMBLY_TREES):
+            if not script:
                 pass
-            elif ASSEMBLY_TREES:
+            elif ASSEMBLY_TREES and cname in ASSEMBLY_TREES:
                 nodes = ASSEMBLY_TREES[cname]
                 try:
                     tree = obj.read_typetree(nodes)
                     is_raw = False
                 except Exception as e:
-                    #print("Error", str(e), "in", objname)
+                    #print("Error #1", str(e), "in", objname)
+                    #is_raw = False
+                    #tree = e.nodes
+                    #objname += "-broken"
                     pass
+            if (is_raw or (ASSEMBLY_TREES and cname not in ASSEMBLY_TREES)) and obj.serialized_type.nodes:
+                # only try embedded nodes as the last resort since they have unknown quality
+                try:
+                    tree = obj.read_typetree()
+                    is_raw = False
+                except Exception as e:
+                    print("Error #2", str(e), "in", objname)
+                    pass
+
+        def default(instance):
+            if not isinstance(instance, TypeTreeNode):
+                return instance
+            values = [v for v in dir(instance) if v[0] != "_"]
+            return dict(zip(values, [instance.__getattribute__(v) for v in values]))
+
         if is_raw:
             extension = "dat"
             export = data.get_raw_data()
         else:
             extension = "json"
-            export = json.dumps(tree, indent=4, ensure_ascii=False).encode("utf-8-sig")
+            export = json.dumps(tree, indent=4, ensure_ascii=False, default=default).encode("utf-8-sig")
 
         if not BUILD_SCENE_TREE and script and hasattr(script, "m_Namespace") and hasattr(script, "m_ClassName"):
             fp = f"{make_path(DST, 'MonoBehaviours', script.m_Namespace, script.m_ClassName, objname)}.{extension}"
         else:
             fp = f"{make_path(DST, 'MonoBehaviours', objname)}.{extension}"
+
         if not is_raw and not os.path.isfile(fp):
             with open(fp, "wb") as f:
                 f.write(export)
+
     #else:
     #     fp = "%s-%s-%d" % (asset, obj.path_id, obj.type)
 

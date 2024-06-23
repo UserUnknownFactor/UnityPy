@@ -120,15 +120,19 @@ def main():
                 with open(fname + ".bin", "rb") as dat:
                     obj.set_raw_data(dat.read())
         if objfmt == CID.Texture2D:
-            fname = next((path for path in images if data.name == base_name(path)), None)
+            fname = next((path for path in images if f"{asset_name}-{obj.path_id}." in path), None)
+            by_name = False
+            if not fname:
+                fname = next((path for path in images if f"{data.name + '-'}" in path), None)
+                by_name = True
             if not fname: return []
-            with open(fname, "rb") as img:
+            with Image.open(fname) as img:
                 _img = Image.open(img)
                 if _img.height != data.m_Height or _img.width != data.m_Width:
                      # it's not the same image even if their names are the same
                     return [obj.path_id]
-                data.image = _img
-            data.save()
+                if data.set_image(img):
+                    data.save()
         elif objfmt == CID.PlayerSettings:
             data.companyName = "Company"
             data.productName = "Game"
@@ -156,7 +160,22 @@ def main():
                             print(f"---- ERROR READING JSON ----\n\n{e} from {fname}")
                         if not sjson:
                             sys.exit(2)
-                        obj.save_typetree(sjson, nodes, all_trees=ASSEMBLY_TREES)
+                        try:
+                            obj.save_typetree(
+                                sjson, nodes,
+                                all_trees=ASSEMBLY_TREES|obj.assets_file.get_ref_typetrees()
+                            )
+                            obj.mark_changed()
+                        except Exception as e:
+                            try:
+                                obj.save_typetree(
+                                    sjson, obj.serialized_type.nodes,
+                                    all_trees=ASSEMBLY_TREES|obj.assets_file.get_ref_typetrees()
+                                )
+                                obj.mark_changed()
+                            except Exception as e1:
+                                pass
+                                raise Exception(f"Error {e}/{e1} in {fname}")
             else:
                 with open(fname, "rb") as dat:
                     obj.set_raw_data(dat.read())

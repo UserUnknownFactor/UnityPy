@@ -212,8 +212,8 @@ class Environment:
             if isinstance(f, (SerializedFile, EndianBinaryReader)):
                 self.register_cab(stream_name, f)
             self.files[stream_name] = f
-        if hasattr(f, "m_DirectoryInfo"):
-            for fmap in f.m_DirectoryInfo:
+        if hasattr(f, "blocks") and hasattr(f.blocks, "m_DirectoryInfo"):
+            for fmap in f.blocks.m_DirectoryInfo:
                 fmap = simplify_name(fmap.path)
                 if not fmap in self.GLOBAL_FILE_MAP:
                     self.GLOBAL_FILE_MAP[fmap] = stream_name
@@ -252,6 +252,7 @@ class Environment:
                 if writer_generator:
                     self.files[f].save(packer=pack, writer=writer_generator(fn))
                 else:
+                    os.makedirs(os.path.dirname(fn), exist_ok=True)
                     with open(fn, 'w+b') as wf:
                         self.files[f].save(packer=pack, writer=EndianBinaryWriter(wf))
                 self.files[f].is_changed = False
