@@ -9,7 +9,7 @@ class Transform(Component):
         self.m_LocalRotation = reader.read_quaternion()
         self.m_LocalPosition = reader.read_vector3()
         self.m_LocalScale = reader.read_vector3()
-        if reader.version >= (2021, 3): # TODO: check if lower
+        if reader.version[:2] >= (2021, 3): # TODO: check if lower
             reader.align_stream()
 
         numChildren = reader.read_int()
@@ -24,7 +24,7 @@ class Transform(Component):
         writer.write_quaternion(self.m_LocalRotation)
         writer.write_vector3(self.m_LocalPosition)
         writer.write_vector3(self.m_LocalScale)
-        if self.reader.version >= (2021, 3): # TODO: check if lower
+        if self.reader.version[:2] >= (2021, 3): # TODO: check if lower
             writer.align_stream()
 
         writer.write_int(len(self.m_Children))

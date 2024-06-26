@@ -170,7 +170,7 @@ class ObjectReader:
                         raise
             else:
                 obj = cls(self)
-        if not obj and (return_typetree_on_error and config.ENABLE_TYPETREEHELPER_FALLBACK):
+        if not obj and config.ENABLE_TYPETREEHELPER_FALLBACK:
             obj = self.read_typetree(wrap=True)
         self._last_read_pos = self.reader.Position
         return obj

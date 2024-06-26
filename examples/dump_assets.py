@@ -74,8 +74,10 @@ def main():
             with open(file_name + "_scenetree.txt", "w", encoding="utf-8") as st:
                 for line in parent_root.print_tree():
                     st.write(line + '\n')
-        for item in tqdm(list(asset.get_filtered_assets(TYPES))):
-            export_obj(item, item.assets_file.name)
+
+        if hasattr(asset, "get_filtered_assets"):
+            for item in tqdm(list(asset.get_filtered_assets(TYPES))):
+                export_obj(item, item.assets_file.name)
 
         asset.close()
         am.close()
@@ -86,7 +88,7 @@ def make_path(*args):
     return fp
 
 
-def export_obj(obj, asset: str) -> list:
+def export_obj(obj, asset: str, **kwargs) -> list:
     global component_dict
     global gobj_leafs_dict
     global parent_root
@@ -117,7 +119,11 @@ def export_obj(obj, asset: str) -> list:
             current_node = gobj_leafs_dict[data]
         parent = parent_root
         for component in data.m_Components:
-            name = component.m_Name
+            name = None
+            try:
+                name = component.m_Name
+            except:
+                pass
             if name is None: name = data.m_Name
             if component.type in [CID.Transform, CID.RectTransform]:
                 if tmp := component.read():

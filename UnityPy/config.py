@@ -4,7 +4,7 @@ FALLBACK_UNITY_VERSION = "2022.1.3f1"
 from os import environ
 
 def is_true_env(name:str, default:str='True'):
-    environ.get(name, default).strip('"').lower() in ('true', '1', 't', 'yes', 'y')
+    return environ.get(name, default).strip('"').lower() in ('true', '1', 't', 'yes', 'y')
 
 def get_env_int(name:str, default:str|int=0):
     return int(environ.get(name, str(default)).strip('"'))
@@ -21,7 +21,7 @@ BIG_OBJECT_GUARD = 0 #int(2e9) # 0 or don't try to unpack bigger objects (bytes)
 
 ENABLE_TYPETREEHELPER_FALLBACK = is_true_env('ENABLE_TYPETREEHELPER_FALLBACK') # Fallback to TypeTreeHelper parsing in asset bundles
 
-EXTENDED_SEARCH =  is_true_env('EXTENDED_SEARCH', 'False') # Search all cwd subdirectories for resources
+EXTENDED_SEARCH =  is_true_env('EXTENDED_SEARCH', 'True') # Search all cwd subdirectories for resources
 
 DEBUG_TYPETREES = is_true_env('DEBUG_TYPETREES', 'False') # Toggles TypeTree debugging in ObjectReader and TypeTreeHelper
 

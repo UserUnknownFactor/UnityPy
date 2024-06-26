@@ -67,6 +67,7 @@ class Texture2D(Texture):
         img,
         in_cab: bool = False,
         mipmap_count: int = 1,
+        mipmaps: tuple = (),
     ) -> bool:
         """Sets Texture2D image, set its corresponding m_ attributes to
            its dimensions and the desired output texture format
@@ -85,6 +86,12 @@ class Texture2D(Texture):
         if not self.check_image_valid(img):
             return False
 
+        if mipmap_count > 1:
+            if img.mode == "RGBA" or "transparency" in img.info:
+                self.m_TextureFormat = TextureFormat.RGBA32
+            else:
+                self.m_TextureFormat = TextureFormat.RGB24
+
         # NOTE: no need for the texture meta parameters since we have its attributes
         img_data, tex_format = Texture2DConverter.image_to_texture2d(img, self.m_TextureFormat)
         if mipmap_count > 1:
@@ -97,9 +104,12 @@ class Texture2D(Texture):
                 if width < 4 or height < 4:
                     mipmap_count = i + 1
                     break
-                re_img = re_img.resize((width, height), Image.BICUBIC)
+                if mipmaps and i < len(mipmaps):
+                    re_img = Image.open(mipmaps[i])
+                else:
+                    re_img = re_img.resize((width, height), Image.BILINEAR)
                 img_data += Texture2DConverter.image_to_texture2d(
-                    re_img, target_format
+                    re_img, self.m_TextureFormat
                 )[0]
 
         if self.version[:2] < (5, 2):  # 5.2 down
