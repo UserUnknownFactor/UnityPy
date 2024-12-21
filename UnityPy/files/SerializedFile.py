@@ -8,6 +8,7 @@ from ..streams import EndianBinaryReader, EndianBinaryWriter
 from ..classes import AssetBundle
 from ..helpers.TypeTreeHelper import dump_typetree
 from .. import config, classes
+from ..exceptions import sanity_check
 
 UNITY_ZERO = "0.0.0"
 
@@ -97,7 +98,8 @@ class SerializedFile(File.File):
             self.type_trees_saved = reader.read_boolean()
 
         # Read Types
-        type_count = reader.read_int()
+        type_count = reader.read_u_int()
+        sanity_check(f"type_count of {self.name}", type_count, 0xFFFFF)
         self.serialized_types = [None] * type_count
         for i in range(type_count): # for debugging
             self.serialized_types[i] = SerializedType(reader, self, False)
@@ -107,7 +109,8 @@ class SerializedFile(File.File):
             self.big_id_enabled = reader.read_int()
 
         # Read Objects
-        object_count = reader.read_int()
+        object_count = reader.read_u_int()
+        sanity_check(f"object_count of {self.name}", object_count, 0xFFFFF)
         self.objects = {}
         for _ in range(object_count):
             obj = ObjectReader.ObjectReader(self, reader)
@@ -115,21 +118,24 @@ class SerializedFile(File.File):
 
         # Read Scripts
         if header.version >= 11:
-            script_count = reader.read_int()
+            script_count = reader.read_u_int()
+            sanity_check(f"script_count of {self.name}", script_count, 0xFFFFF)
             self.script_types = [
                 LocalSerializedObjectIdentifier(header, reader)
                 for _ in range(script_count)
             ]
 
         # Read Externals
-        externals_count = reader.read_int()
+        externals_count = reader.read_u_int()
+        sanity_check(f"externals_count of {self.name}", externals_count, 0xFFFFF)
         self.externals = [
             FileIdentifier(header, reader) for _ in range(externals_count)
         ]
 
         # Read Reference Types
         if header.version >= 20:
-            ref_type_count = reader.read_int()
+            ref_type_count = reader.read_u_int()
+            sanity_check(f"ref_type_count of {self.name}", ref_type_count, 0xFFFFF)
             self.reference_types = [
                 SerializedType(reader, self, True) for _ in range(ref_type_count)
             ]

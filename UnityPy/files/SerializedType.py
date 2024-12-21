@@ -57,10 +57,10 @@ class SerializedType:
     def __init__(self, reader: EndianBinaryReader, serialized_file: "SerializedFile", is_ref_type: bool):
         self._serialized_file = weakref.proxy(serialized_file)
         self.is_ref_type = is_ref_type
-        version = serialized_file.header.version
         self.string_data = None
         self.is_changed = False
 
+        version = serialized_file.header.version
         set_globals(reader.endian, version)
 
         # read SerializedType from the stream
@@ -73,6 +73,7 @@ class SerializedType:
             self.script_type_index = reader.read_short()
 
         if version >= 13:
+            self.script_id = None
             if (
                 (is_ref_type and self.script_type_index >= 0)
                 or (version < 16 and self.class_id < 0)
@@ -106,11 +107,7 @@ class SerializedType:
             writer.write_short(self.script_type_index)
 
         if version >= 13:
-            if (
-                (self.is_ref_type and self.script_type_index >= 0)
-                or (version < 16 and self.class_id < 0)
-                or (version >= 16 and self.class_id == ClassIDType.MonoBehaviour)
-            ):
+            if self.script_id is not None:
                 writer.write_bytes(self.script_id)  # Hash128
             writer.write_bytes(self.old_type_hash)  # Hash128
 

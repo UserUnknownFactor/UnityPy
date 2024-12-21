@@ -9,7 +9,7 @@ def is_true_env(name:str, default:str='True'):
 def get_env_int(name:str, default:str|int=0):
     return int(environ.get(name, str(default)).strip('"'))
 
-DEBUG =  is_true_env('DEBUG') # Toggles debugging branches
+DEBUG =  is_true_env('DEBUG', 'True') # Toggles debugging branches (useful if memory is exhausted due to errors in typetrees)
 
 # Determines if the TypeTrees for the Object types will be parsed.
 #  Disabling this will reduce the load time by a lot (half of the time is spend

@@ -209,8 +209,11 @@ class ObjectReader:
     def __getattr__(self, name: str):
         if hasattr(self.reader, name):
             return getattr(self.reader, name)
-        else:
-            raise AttributeError(f"{self.__class__.__name__} has not attribute {name}")
+        elif name.startswith("m_"):
+            non_m = name[2:].lower()
+            if hasattr(self.reader, non_m):
+                return getattr(self.reader, non_m)
+        raise AttributeError(f"{self.__class__.__name__} has not attribute {name}")
 
     def __repr__(self):
         return "<%s %s>" % (self.__class__.__name__, self.type.name)

@@ -519,6 +519,8 @@ class GenericBinding:
             self.typeID = ClassIDType(reader.read_u_short())
         self.customType = reader.read_byte()
         self.isPPtrCurve = reader.read_byte()
+        if version >= (2022, 1):  # 2022.1 and up
+            self.isIntCurve = reader.read_byte()
         reader.align_stream()
 
 
@@ -560,8 +562,10 @@ class AnimationEvent:
         self.data = reader.read_aligned_string()
         self.objectReferenceParameter = PPtr(reader)
         self.floatParameter = reader.read_float()
+
         if version > (3, ):
             self.intParameter = reader.read_int()
+
         self.messageOptions = reader.read_int()
 
 
@@ -631,4 +635,3 @@ class AnimationClip(NamedObject):
         self.m_Events = [AnimationEvent(self.reader) for _ in range(numEvents)]
         if version >= (2017, ):
             reader.align_stream()
-# ]

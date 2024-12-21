@@ -284,6 +284,7 @@ class Environment:
                         postfix = asset_name
                 else:
                     all_cobjs = cobjs
+
                 for asset_path, obj in all_cobjs:
                     local_path = os.path.join(self.out_path, *asset_path.split('/')
                                     [self.ignore_dir_lvls:])
@@ -301,10 +302,12 @@ class Environment:
                 # find the most common path
                 occurence_count = Counter(os.path.splitext(asset_path)[
                                         0] for asset_path in asset.container.keys())
-                local_path = ''
+
                 if len(occurence_count) > 0:
                     local_path = os.path.join(
                         self.out_path, *occurence_count.most_common(1)[0][0].split('/')[self.ignore_dir_lvls:])
+                else:
+                    local_path = ''
 
                 for obj in all_objs:
                     if obj.path_id not in extracted and obj:

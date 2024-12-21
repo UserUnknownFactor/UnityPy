@@ -33,24 +33,8 @@ def decompress_lzma(data: bytes) -> bytes:
     :return: uncompressed data
     :rtype: bytes
     """
-    props, dict_size = struct.unpack("<BI", data[:5])
-    lc = props % 9
-    props = props // 9
-    pb = props // 5
-    lp = props % 5
-    dec = lzma.LZMADecompressor(
-        format=lzma.FORMAT_RAW,
-        filters=[
-            {
-                "id": lzma.FILTER_LZMA1,
-                "dict_size": dict_size,
-                "lc": lc,
-                "lp": lp,
-                "pb": pb,
-            }
-        ],
-    )
-    return dec.decompress(data[5:])
+    ld = lzma.LZMADecompressor(format=lzma.FORMAT_AUTO)
+    return ld.decompress(data) + ld.flush()
 
 
 def compress_lzma(data: bytes) -> bytes:
@@ -63,7 +47,7 @@ def compress_lzma(data: bytes) -> bytes:
     :return: compressed data
     :rtype: bytes
     """
-    ec = lzma.LZMACompressor(
+    lc = lzma.LZMACompressor(
         format=lzma.FORMAT_RAW,
         filters=[
             {
@@ -75,7 +59,10 @@ def compress_lzma(data: bytes) -> bytes:
             }
         ],
     )
-    return b"]\x00\x00\x08\x00" + ec.compress(data) + ec.flush()
+    compressed_data = lc.compress(data) + lc.flush()
+    header = bytearray(compressed_data[:13])
+    header[5:13] =  len(data).to_bytes(8, 'little')
+    return bytes(header) + compressed_data[13:]
 
 
 # LZ4
