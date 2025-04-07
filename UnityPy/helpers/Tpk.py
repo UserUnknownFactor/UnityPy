@@ -1,30 +1,33 @@
 from __future__ import annotations
+
 from enum import IntEnum, IntFlag
-from struct import Struct
+from importlib.resources import open_binary
 from io import BytesIO
-from typing import List, Tuple, Any, Dict
+from struct import Struct
+from typing import Any, Dict, List, Tuple
 from .TypeTreeHelper import TypeTreeNode
 from .UnityVersion import UnityVersion
 
 TPKTYPETREE: TpkTypeTreeBlob = None
-NODES_CACHE: dict = {}
+CLASSES_CACHE: Dict[Tuple[int, tuple], TypeTreeNode] = {}
+NODES_CACHE: Dict[TpkUnityClass, TypeTreeNode] = {}
 
 
 def init():
-    import os
+    with open_binary("UnityPy.resources", "uncompressed.tpk") as f:
+        data = f.read()
 
-    with open(
-        os.path.join(os.path.dirname(os.path.dirname(__file__)), "resources", "uncompressed.tpk"), "rb"
-    ) as f:
-        global TPKTYPETREE
-        TPKTYPETREE = TpkFile(f).GetDataBlob()
+    global TPKTYPETREE
+    with BytesIO(data) as stream:
+        TPKTYPETREE = TpkFile(stream).GetDataBlob()
 
 
 def get_typetree_nodes_from_tpk(class_id: int, version: tuple):
-    global NODES_CACHE
+    global CLASSES_CACHE
     key = (class_id, version)
-    if key in NODES_CACHE:
-        return NODES_CACHE[key]
+    cached = CLASSES_CACHE.get(key)
+    if cached:
+        return cached
 
     class_info = TPKTYPETREE.ClassInformation[class_id].getVersionedClass(
         UnityVersion.fromList(*version)
@@ -32,12 +35,17 @@ def get_typetree_nodes_from_tpk(class_id: int, version: tuple):
     if class_info is None:
         raise ValueError("Could not find class info for class id {}".format(class_id))
 
-    nodes = generate_flat_nodes(class_info)
-    NODES_CACHE[key] = nodes
-    return nodes
+    node = generate_node(class_info)
+    CLASSES_CACHE[key] = node
+    return node
 
 
-def generate_flat_nodes(class_info: TpkUnityClass) -> List[TypeTreeNode]:
+def generate_node(class_info: TpkUnityClass, unwrap: bool = False) -> TypeTreeNode:
+    global NODES_CACHE
+    cached = NODES_CACHE.get(class_info)
+    if cached:
+        return cached
+
     nodes = []
     NODES = TPKTYPETREE.NodeBuffer.Nodes
     stack = [(class_info.ReleaseRootNode, 0)]
@@ -58,7 +66,9 @@ def generate_flat_nodes(class_info: TpkUnityClass) -> List[TypeTreeNode]:
         )
         stack = [(node_id, level + 1) for node_id in node.SubNodes] + stack
         index += 1
-    return nodes
+    result = TypeTreeNode.from_list(nodes) if unwrap else nodes
+    NODES_CACHE[class_info] = result
+    return result
 
 
 ######################################################################################
@@ -73,8 +83,6 @@ class TpkCompressionType(IntEnum):
     Lz4 = 1
     Lzma = 2
     Brotli = 3
-
-
 
 
 class TpkDataType(IntEnum):
@@ -163,12 +171,12 @@ class TpkFile:
         elif self.CompressionType == TpkCompressionType.Lzma:
             import lzma
 
-            raise Exception("LZMA compression not implemented")
+            decompressed = lzma.decompress(self.CompressedBytes)
 
         elif self.CompressionType == TpkCompressionType.Brotli:
             import brotli
 
-            decompressed = brotli.decompress(self.CompressedBytes)
+            decompressed: bytes = brotli.decompress(self.CompressedBytes)
 
         else:
             raise Exception("Invalid compression type")
@@ -184,7 +192,7 @@ class TpkFile:
 
 
 class TpkDataBlob:
-    __slots__ = "DataType"
+    __slots__ = ("DataType",)
     DataType: TpkDataType
 
     def __init__(self, stream: BytesIO) -> None:
@@ -238,7 +246,7 @@ class TpkCollectionBlob(TpkDataBlob):
 
 
 class TpkFileSystemBlob(TpkDataBlob):
-    __slots__ = "Files"
+    __slots__ = ("Files",)
     # TODO: check if dict might be better
     Files: List[Tuple[str, bytes]]
 
@@ -287,12 +295,28 @@ class TpkUnityClass:
         if self.Flags & TpkUnityClassFlags.HasReleaseRootNode:
             (self.ReleaseRootNode,) = UINT16.unpack(stream.read(UINT16.size))
 
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "Name": self.Name,
+            "Base": self.Base,
+            "Flags": self.Flags,
+            "EditorRootNode": self.EditorRootNode,
+            "ReleaseRootNode": self.ReleaseRootNode,
+        }
+
     def __eq__(self, other: TpkUnityClass) -> bool:
-        return self.__dict__ == other.__dict__
+        return self.to_dict() == other.to_dict()
 
     def __hash__(self) -> int:
-        # TODO
-        return hash(self.__dict__)
+        return hash(
+            (
+                self.Name,
+                self.Base,
+                self.Flags,
+                self.EditorRootNode,
+                self.ReleaseRootNode,
+            )
+        )
 
 
 class TpkClassInformation:

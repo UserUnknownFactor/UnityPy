@@ -1,7 +1,7 @@
 import gzip
-import struct
-
 import lzma
+import struct
+from typing import Tuple
 import lz4.block
 NO_BROTLI= False
 try:
@@ -24,7 +24,7 @@ def supports_lzham() -> bool:
     return not NO_LZHAM
 
 # LZMA
-def decompress_lzma(data: bytes) -> bytes:
+def decompress_lzma(data: bytes, read_decompressed_size: bool = False) -> bytes:
     """Decompresses LZMA-compressed data
 
     :param data: compressed data
@@ -33,11 +33,28 @@ def decompress_lzma(data: bytes) -> bytes:
     :return: uncompressed data
     :rtype: bytes
     """
-    ld = lzma.LZMADecompressor(format=lzma.FORMAT_AUTO)
-    return ld.decompress(data) + ld.flush()
+    props, dict_size = struct.unpack("<BI", data[:5])
+    lc = props % 9
+    remainder = props // 9
+    pb = remainder // 5
+    lp = remainder % 5
+    decompressor = lzma.LZMADecompressor(
+        format=lzma.FORMAT_RAW,
+        filters=[
+            {
+                "id": lzma.FILTER_LZMA1,
+                "dict_size": dict_size,
+                "lc": lc,
+                "lp": lp,
+                "pb": pb,
+            }
+        ],
+    )
+    data_offset = 13 if read_decompressed_size else 5
+    return decompressor.decompress(data[data_offset:])
 
 
-def compress_lzma(data: bytes) -> bytes:
+def compress_lzma(data: bytes, write_decompressed_size: bool = False) -> bytes:
     """LZMA-compresses data (Unity specific)
     The current static settings may not be the best solution,
     but they are the most commonly used values and should therefore be enough for the time being.
@@ -47,27 +64,34 @@ def compress_lzma(data: bytes) -> bytes:
     :return: compressed data
     :rtype: bytes
     """
-    lc = lzma.LZMACompressor(
+    dict_size = 0x800000  # 1 << 23
+    compressor = lzma.LZMACompressor(
         format=lzma.FORMAT_RAW,
         filters=[
             {
                 "id": lzma.FILTER_LZMA1,
-                "dict_size": 524288,
+                "dict_size": dict_size,
                 "lc": 3,
                 "lp": 0,
                 "pb": 2,
+                "mode": lzma.MODE_NORMAL,
+                "mf": lzma.MF_BT4,
+                "nice_len": 123,
             }
         ],
     )
-    compressed_data = lc.compress(data) + lc.flush()
-    header = bytearray(compressed_data[:13])
-    header[5:13] =  len(data).to_bytes(8, 'little')
-    return bytes(header) + compressed_data[13:]
+
+    compressed_data = compressor.compress(data) + compressor.flush()
+    cdl = len(compressed_data)
+    if write_decompressed_size:
+        return struct.pack(f"<BIQ{cdl}s", 0x5D, dict_size, len(data), compressed_data)
+    else:
+        return struct.pack(f"<BI{cdl}s", 0x5D, dict_size, compressed_data)
 
 
 # LZ4
 def decompress_lz4(data: bytes, uncompressed_size: int) -> bytes:  # LZ4M/LZ4HC
-    """Decompresses lz4-compressed data
+    """Decompresses LZ4-compressed data
 
     :param data: compressed data
     :type data: bytes
@@ -103,7 +127,7 @@ def compress_lz4hc(data: bytes) -> bytes:  # LZ4HC
 
 # LZ4
 def decompress_lzham(data: bytes, uncompressed_size: int) -> bytes:  # LZ4M/LZ4HC
-    """Decompresses lzham-compressed data
+    """Decompresses LZHAM-compressed data
 
     :param data: compressed data
     :type data: bytes
@@ -120,7 +144,7 @@ def decompress_lzham(data: bytes, uncompressed_size: int) -> bytes:  # LZ4M/LZ4H
 
 
 def compress_lzham(data: bytes) -> bytes:  # LZ4M/LZ4HC
-    """Compresses data via lz4.block
+    """Compresses LZHAM data via lz4.block
 
     :param data: uncompressed data
     :type data: bytes
@@ -135,7 +159,7 @@ def compress_lzham(data: bytes) -> bytes:  # LZ4M/LZ4HC
 
 # Brotli
 def decompress_brotli(data: bytes) -> bytes:
-    """Decompresses brotli-compressed data
+    """Decompresses Brotli-compressed data
 
     :param data: compressed data
     :type data: bytes
@@ -149,7 +173,7 @@ def decompress_brotli(data: bytes) -> bytes:
 
 
 def compress_brotli(data: bytes) -> bytes:
-    """Compresses data via brotli
+    """Compresses data via Brotli
 
     :param data: uncompressed data
     :type data: bytes
@@ -163,7 +187,7 @@ def compress_brotli(data: bytes) -> bytes:
 
 # GZIP
 def decompress_gzip(data: bytes) -> bytes:
-    """Decompresses gzip-compressed data
+    """Decompresses GZip-compressed data
 
     :param data: compressed data
     :type data: bytes
@@ -175,7 +199,7 @@ def decompress_gzip(data: bytes) -> bytes:
 
 
 def compress_gzip(data: bytes) -> bytes:
-    """Compresses data via gzip
+    """Compresses data via GZip
     The current static settings may not be the best solution,
     but they are the most commonly used values and should therefore be enough for the time being.
 
@@ -185,3 +209,4 @@ def compress_gzip(data: bytes) -> bytes:
     :rtype: bytes
     """
     return gzip.compress(data)
+

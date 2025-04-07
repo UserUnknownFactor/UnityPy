@@ -157,7 +157,7 @@ class EndianBinaryReader:
         length = self.read_u_int()
         sanity_check("read_map", length)
         result = {}
-        for _ in range(numNonModifiableTextures):
+        for _ in range(length):
             key = command1() # this is possible since Object impl. __hash__ and __eq__
             result[key] = command2()
         return result
@@ -196,19 +196,22 @@ class EndianBinaryReader_Memoryview(EndianBinaryReader):
     def endian(self):
         return self._endian
 
+    def set_endian_be(self):
+        if ">" != self._endian:
+            setattr(self,"__class__", EndianBinaryReader_Memoryview_BigEndian)
+            self._endian = ">"
+
+    def set_endian_le(self):
+        if "<" != self._endian:
+            setattr(self,"__class__", EndianBinaryReader_Memoryview_LittleEndian)
+            self._endian = "<"
+
     @endian.setter
     def endian(self, value: str):
-        if value not in ("<", ">"):
+        if value not in ("<", ">", "little", "big"):
             raise ValueError("Invalid endian")
-        if value != self._endian:
-            setattr(
-                self,
-                "__class__",
-                EndianBinaryReader_Memoryview_LittleEndian
-                if value == "<"
-                else EndianBinaryReader_Memoryview_BigEndian,
-            )
-            self._endian = value
+        self.set_endian_le() if value in (
+            "<", "little") else self.set_endian_be()
 
     @property
     def bytes(self) -> memoryview:
@@ -232,6 +235,7 @@ class EndianBinaryReader_Memoryview(EndianBinaryReader):
             self.Position = value
         else:
             self.Position = self.Length
+        return self.Position
 
     def seek_relative(self, value):
         new_position = self.Position + value
@@ -239,6 +243,7 @@ class EndianBinaryReader_Memoryview(EndianBinaryReader):
             self.Position = new_position
         else:
             self.Position = self.Length
+        return self.Position
 
     def read(self, length: int):
         if not length:
@@ -283,9 +288,21 @@ class EndianBinaryReader_Streamable(EndianBinaryReader):
 
     def seek(self, value):
         self.stream.seek(value + self.BaseOffset, SEEK_SET)
+        return self.Position
 
     def seek_relative(self, value):
         self.stream.seek(value, SEEK_CUR)
+        return self.Position
+
+    def set_endian_be(self):
+        if ">" != self._endian:
+            setattr(self,"__class__", EndianBinaryReader_Streamable_BigEndian)
+            self._endian = ">"
+
+    def set_endian_le(self):
+        if "<" != self._endian:
+            setattr(self,"__class__", EndianBinaryReader_Streamable_LittleEndian)
+            self._endian = "<"
 
     @property
     def endian(self):
@@ -293,17 +310,10 @@ class EndianBinaryReader_Streamable(EndianBinaryReader):
 
     @endian.setter
     def endian(self, value):
-        if value not in ("<", ">"):
+        if value not in ("<", ">", "little", "big"):
             raise ValueError(f"Invalid endianness: {value}")
-        if value != self._endian:
-            setattr(
-                self,
-                "__class__",
-                EndianBinaryReader_Streamable_LittleEndian
-                if value == "<"
-                else EndianBinaryReader_Streamable_BigEndian,
-            )
-            self._endian = value
+        self.set_endian_le() if value in (
+            "<", "little") else self.set_endian_be()
 
     @property
     def Length(self):

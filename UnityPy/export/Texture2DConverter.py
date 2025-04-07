@@ -1,49 +1,95 @@
-﻿import texture2ddecoder
-import etcpak
-from PIL import Image
-from io import BytesIO
+﻿from __future__ import annotations
+
 import struct
-from ..enums import TextureFormat, BuildTarget
+from copy import copy
+from io import BytesIO
+from typing import TYPE_CHECKING, Dict, Tuple, Union
+
+import texture2ddecoder
+from PIL import Image
+
+from ..enums import BuildTarget, TextureFormat
 from ..helpers import TextureSwizzler
+
+if TYPE_CHECKING:
+    from ..classes import Texture2D
+
 
 TF = TextureFormat
 
 
-def image_to_texture2d(img: Image.Image, target_texture_format: TF, flip: bool = True):
+def image_to_texture2d(
+    img: Image.Image, target_texture_format: Union[TF, int], flip: bool = True
+) -> Tuple[bytes, TextureFormat]:
+    if isinstance(target_texture_format, int):
+        target_texture_format = TextureFormat(target_texture_format)
+
+    import etcpak
+
     if flip:
         img = img.transpose(Image.FLIP_TOP_BOTTOM)
 
     # DXT
     if target_texture_format in [TF.DXT1, TF.DXT1Crunched]:
-        raw_img = img.convert("RGBA").tobytes()
-        enc_img = etcpak.compress_to_dxt1(raw_img, img.width, img.height)
+        raw_img = img.tobytes("raw", "RGBA")
+        enc_img = etcpak.compress_bc1(raw_img, img.width, img.height)
         tex_format = TF.DXT1
     elif target_texture_format in [TF.DXT5, TF.DXT5Crunched]:
-        raw_img = img.convert("RGBA").tobytes()
-        enc_img = etcpak.compress_to_dxt5(raw_img, img.width, img.height)
+        raw_img = img.tobytes("raw", "RGBA")
+        enc_img = etcpak.compress_bc3(raw_img, img.width, img.height)
         tex_format = TF.DXT5
+    elif target_texture_format in [TF.BC4]:
+        raw_img = img.tobytes("raw", "RGBA")
+        enc_img = etcpak.compress_bc4(raw_img, img.width, img.height)
+        tex_format = TF.BC4
+    elif target_texture_format in [TF.BC5]:
+        raw_img = img.tobytes("raw", "RGBA")
+        enc_img = etcpak.compress_bc5(raw_img, img.width, img.height)
+        tex_format = TF.BC5
+    elif target_texture_format in [TF.BC7]:
+        raw_img = img.tobytes("raw", "RGBA")
+        enc_img = etcpak.compress_bc7(raw_img, img.width, img.height)
+        tex_format = TF.BC7
     # ETC
     elif target_texture_format in [TF.ETC_RGB4, TF.ETC_RGB4Crunched, TF.ETC_RGB4_3DS]:
-        img = assert_rgba(img, target_texture_format)
-        r, g, b, a = img.split()
-        raw_img = Image.merge("RGBA", (b, g, r, a)).tobytes()
-        enc_img = etcpak.compress_to_etc1(raw_img, img.width, img.height)
+        raw_img = img.tobytes("raw", "RGBA")
+        enc_img = etcpak.compress_etc1_rgb(raw_img, img.width, img.height)
         tex_format = TF.ETC_RGB4
     elif target_texture_format == TF.ETC2_RGB:
-        img = assert_rgba(img, target_texture_format)
-        r, g, b, a = img.split()
-        raw_img = Image.merge("RGBA", (b, g, r, a)).tobytes()
-        enc_img = etcpak.compress_to_etc2_rgb(raw_img, img.width, img.height)
+        raw_img = img.tobytes("raw", "RGBA")
+        enc_img = etcpak.compress_etc2_rgb(raw_img, img.width, img.height)
         tex_format = TF.ETC2_RGB
     elif (
         target_texture_format in [TF.ETC2_RGBA8, TF.ETC2_RGBA8Crunched, TF.ETC2_RGBA1]
         or "_RGB_" in target_texture_format.name
     ):
-        img = assert_rgba(img, target_texture_format)
-        r, g, b, a = img.split()
-        raw_img = Image.merge("RGBA", (b, g, r, a)).tobytes()
-        enc_img = etcpak.compress_to_etc2_rgba(raw_img, img.width, img.height)
+        raw_img = img.tobytes("raw", "RGBA")
+        enc_img = etcpak.compress_etc2_rgba(raw_img, img.width, img.height)
         tex_format = TF.ETC2_RGBA8
+    elif target_texture_format.name.startswith("ASTC"):
+        import astc_encoder
+
+        raw_img = img.tobytes("raw", "RGBA")
+
+        block_size = tuple(
+            map(int, target_texture_format.name.rsplit("_", 1)[1].split("x"))
+        )
+
+        config = astc_encoder.ASTCConfig(
+            astc_encoder.ASTCProfile.LDR, *block_size, 1, 100
+        )
+        context = astc_encoder.ASTCContext(config)
+        raw_img = astc_encoder.ASTCImage(
+            astc_encoder.ASTCType.U8, img.width, img.height, 1, raw_img
+        )
+        if img.mode == "RGB":
+            tex_format = getattr(TF, f"ASTC_RGB_{block_size[0]}x{block_size[1]}")
+        else:
+            tex_format = getattr(TF, f"ASTC_RGBA_{block_size[0]}x{block_size[1]}")
+
+        swizzle = astc_encoder.ASTCSwizzle.from_str("RGBA")
+        enc_img = context.compress(raw_img, swizzle)
+        tex_format = target_texture_format
     # A
     elif target_texture_format == TF.Alpha8:
         enc_img = img.tobytes("raw", "A")
@@ -83,16 +129,16 @@ def image_to_texture2d(img: Image.Image, target_texture_format: TF, flip: bool =
     return enc_img, tex_format
 
 
-def assert_rgba(img: Image.Image, target_texture_format: TextureFormat):
-    if img.mode == "RGB":
-        img = img.convert("RGBA")
-    assert (
-        img.mode == "RGBA"
-    ), f"{target_texture_format} compression only supports RGB & RGBA images"  # noqa: E501
+def assert_rgba(img: Image.Image, target_texture_format: TextureFormat) -> Image.Image:
+    if img.mode == "RGB": img = img.convert("RGBA")
+    assert ( img.mode == "RGBA"), f"{target_texture_format} compression only supports RGB & RGBA images"
     return img
 
 
-def get_image_from_texture2d(texture_2d, flip=True) -> Image.Image:
+def get_image_from_texture2d(
+    texture_2d: Texture2D,
+    flip: bool = True,
+) -> Image.Image:
     """converts the given texture into PIL.Image
 
     :param texture_2d: texture to be converterd
@@ -107,7 +153,7 @@ def get_image_from_texture2d(texture_2d, flip=True) -> Image.Image:
     width = texture_2d.m_Width
     height = texture_2d.m_Height
     if width == 0 or height == 0:
-        raise Exception("Empty Texture2D")
+        raise Exception("Zero dimensions Texture2D")
 
     texture_format = (
         texture_2d.m_TextureFormat
@@ -117,7 +163,7 @@ def get_image_from_texture2d(texture_2d, flip=True) -> Image.Image:
 
     image_data = texture_2d.image_data
     if not image_data:
-        raise Exception(f"Can't retrieve Texture2D {'; path: ' + texture_2d.m_StreamData.path if hasattr(texture_2d, 'm_StreamData') else ''})")
+        raise Exception(f"No image data available for Texture2D {'; path: ' + texture_2d.m_StreamData.path if hasattr(texture_2d, 'm_StreamData') else ''})")
 
     return parse_image_data(
         bytes(image_data),
@@ -134,11 +180,11 @@ def parse_image_data(
     image_data: bytes,
     width: int,
     height: int,
-    texture_format: TextureFormat,
+    texture_format: Union[int, TextureFormat],
     version: tuple,
     platform: int,
     platform_blob: bytes = None,
-    flip=True,
+    flip: bool = True,
 ) -> Image.Image:
     if not image_data:
         raise ValueError("Texture2D has no image data")
@@ -150,11 +196,22 @@ def parse_image_data(
             f"Not implemented texture format: {texture_format.name}"
         )
 
-    if texture_format in XBOX_SWAP_FORMATS:
-        image_data = swap_bytes_for_xbox(image_data, platform)
+    if platform == BuildTarget.XBOX360 and texture_format in XBOX_SWAP_FORMATS:
+        image_data = swap_bytes_for_xbox(image_data)
+    elif platform == BuildTarget.Switch and platform_blob is not None:
+        gobsPerBlock = TextureSwizzler.get_switch_gobs_per_block(platform_blob)
+        block_size = TextureSwizzler.TEXTUREFORMAT_BLOCK_SIZE_MAP[texture_format]
+        padded_size = TextureSwizzler.get_padded_texture_size(
+            width, height, *block_size, gobsPerBlock
+        )
+        image_data = TextureSwizzler.deswizzle(
+            image_data, *padded_size, *block_size, gobsPerBlock
+        )
 
+    if not isinstance(texture_format, TextureFormat):
+        texture_format = TextureFormat(texture_format)
     if "Crunched" in texture_format.name:
-        #version = version
+        version = version
         if (
             version[0] > 2017
             or (version[0] == 2017 and version[1] >= 3)  # 2017.3 and up
@@ -167,33 +224,18 @@ def parse_image_data(
 
     img = selection[0](image_data, width, height, *selection[1:])
 
-    if platform == BuildTarget.Switch and platform_blob is not None:
-        gobsPerBlock = TextureSwizzler.get_switch_gobs_per_block(platform_blob)
-        blockSize = TextureSwizzler.TEXTUREFORMAT_BLOCK_SIZE_MAP[texture_format]
-        img = TextureSwizzler.switch_deswizzle(img, blockSize, gobsPerBlock)
-
     if img and flip:
         return img.transpose(Image.FLIP_TOP_BOTTOM)
 
     return img
 
 
-def swap_bytes_for_xbox(image_data: bytes, build_target: BuildTarget) -> bytes:
+def swap_bytes_for_xbox(image_data: bytes) -> bytes:
     """swaps the texture bytes
     This is required for textures deployed on XBOX360.
-
-    :param image_data: texture data
-    :type image_data: bytes
-    :param build_target: platform of the asset
-    :type build_target: BuildTarget
-    :return: swapped data if platform = XBOX360 else data
-    :rtype: bytes
     """
-    if (
-        build_target == BuildTarget.XBOX360
-    ):  # swap bytes for Xbox confirmed,PS3 not encountered
-        for i in range(0, len(image_data), 2):
-            image_data[i : i + 2] = image_data[i : i + 2][::-1]
+    for i in range(0, len(image_data), 2):
+        image_data[i : i + 2] = image_data[i : i + 2][::-1]
     return image_data
 
 
@@ -226,17 +268,48 @@ def atc(image_data: bytes, width: int, height: int, alpha: bool) -> Image.Image:
     return Image.frombytes("RGBA", (width, height), image_data, "raw", "BGRA")
 
 
+ASTC_CONTEXTS: Dict[Tuple[int, int], astc_encoder.ASTCContext] = {}
+
+
 def astc(image_data: bytes, width: int, height: int, block_size: tuple) -> Image.Image:
-    image_data = texture2ddecoder.decode_astc(image_data, width, height, *block_size)
-    return Image.frombytes("RGBA", (width, height), image_data, "raw", "BGRA")
+    context = ASTC_CONTEXTS.get(block_size)
+    if context is None:
+        config = astc_encoder.ASTCConfig(
+            astc_encoder.ASTCProfile.LDR,
+            *block_size,
+            1,
+            100,
+            astc_encoder.ASTCConfigFlags.USE_DECODE_UNORM8,
+        )
+        context = ASTC_CONTEXTS[block_size] = astc_encoder.ASTCContext(config)
+
+    image = astc_encoder.ASTCImage(astc_encoder.ASTCType.U8, width, height, 1)
+    texture_size = calculate_astc_compressed_size(width, height, block_size)
+    if len(image_data) < texture_size:
+        raise ValueError(f"Invalid ASTC data size: {len(image_data)} < {texture_size}")
+    context.decompress(
+        image_data[:texture_size], image, astc_encoder.ASTCSwizzle.from_str("RGBA")
+    )
+
+    return Image.frombytes("RGBA", (width, height), image.data, "raw", "RGBA")
 
 
-def pvrtc(image_data: bytes, width: int, height: int, fmt: bool):
+def calculate_astc_compressed_size(width: int, height: int, block_size: tuple) -> int:
+    """Calculate the size of the compressed data for ASTC."""
+    # calculate the number of blocks
+    block_count_x = (width + block_size[0] - 1) // block_size[0]
+    block_count_y = (height + block_size[1] - 1) // block_size[1]
+    # ignore depth for 2D textures
+    # calculate the size of the compressed data
+    return block_count_x * block_count_y * 16
+
+
+def pvrtc(image_data: bytes, width: int, height: int, fmt: bool) -> Image.Image:
     image_data = texture2ddecoder.decode_pvrtc(image_data, width, height, fmt)
     return Image.frombytes("RGBA", (width, height), image_data, "raw", "BGRA")
 
 
-def etc(image_data: bytes, width: int, height: int, fmt: list):
+def etc(image_data: bytes, width: int, height: int, fmt: list) -> Image.Image:
     if fmt[0] == 1:
         image_data = texture2ddecoder.decode_etc1(image_data, width, height)
     elif fmt[0] == 2:
@@ -251,7 +324,7 @@ def etc(image_data: bytes, width: int, height: int, fmt: list):
     return Image.frombytes("RGBA", (width, height), image_data, "raw", "BGRA")
 
 
-def eac(image_data: bytes, width: int, height: int, fmt: list):
+def eac(image_data: bytes, width: int, height: int, fmt: list) -> Image.Image:
     if fmt == "EAC_R":
         image_data = texture2ddecoder.decode_eacr(image_data, width, height)
     elif fmt == "EAC_R_SIGNED":
@@ -307,7 +380,7 @@ def rg(
         return pillow(rgb_data, width, height, mode, codec.replace("RG", "RGB"), args)
 
 
-def rgb9e5float(image_data: bytes, width: int, height: int):
+def rgb9e5float(image_data: bytes, width: int, height: int) -> Image.Image:
     rgb = bytearray(width * height * 3)
     for i, (n,) in enumerate(struct.iter_unpack("<i", image_data)):
         scale = n >> 27 & 0x1F

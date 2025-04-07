@@ -39,12 +39,15 @@ class Texture2D(Texture):
     @property
     def image_data(self):
         if not self._image_data and self.m_StreamData is not None:
-            self._image_data = get_resource_data(
-                self.m_StreamData.path,
-                self.assets_file,
-                self.m_StreamData.offset,
-                self.m_StreamData.size,
-            )
+            if not self.m_StreamData.size:
+                self._image_data = b''
+            else:
+                self._image_data = get_resource_data(
+                    self.m_StreamData.path,
+                    self.assets_file,
+                    self.m_StreamData.offset,
+                    self.m_StreamData.size,
+                )
         return self._image_data
 
     def reset_streamdata(self):
@@ -176,6 +179,7 @@ class Texture2D(Texture):
             self.m_StreamData = StreamingInfo(reader, version)
             # don't read the data right away,
             # as we don't want the parser break if the file is missing
+        pass
 
     def save(self, writer: EndianBinaryWriter = None):
         if writer is None:
@@ -260,6 +264,9 @@ class StreamingInfo:
             writer.write_u_int(self.offset)
         writer.write_int(self.size)
         writer.write_aligned_string(self.path)
+
+    def __repr__(self):
+        return f"StreamingInfo<{self.path}: {self.size} @{self.offset}>"
 
 
 class GLTextureSettings:

@@ -202,6 +202,7 @@ class BlockStream:
         # so we have to check the version to determine the correct flag set.
         unity_version = self.unity_version
         if (
+            # < 2000, < 2020.3.34, < 2021.3.2, < 2022.1.1
             unity_version < (2020,)
             or (unity_version[0] == 2020 and unity_version < (2020, 3, 34))
             or (unity_version[0] == 2021 and unity_version < (2021, 3, 2))

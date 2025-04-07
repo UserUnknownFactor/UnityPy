@@ -52,7 +52,7 @@ def check_file_type(input_) -> Union[FileType, EndianBinaryReader]:
     else:
         try:
             reader = EndianBinaryReader(input_)
-        except Exception as e:
+        except:
             return None, None
 
     if reader.Length < 20:
@@ -157,15 +157,15 @@ def parse_file(
 def find_sensitive_path(dir: str, insensitive_path: str) -> Union[str, None]:
     parts = os.path.split(insensitive_path.strip(os.path.sep))
 
-    senstive_path = dir
+    sensitive_path = dir
     for part in parts:
         part_lower = part.lower()
         part = next(
-            (name for name in os.listdir(senstive_path) if name.lower() == part_lower),
+            (name for name in os.listdir(sensitive_path) if name.lower() == part_lower),
             None,
         )
         if part is None:
             return None
-        senstive_path = os.path.join(senstive_path, part)
+        sensitive_path = os.path.join(sensitive_path, part)
 
-    return senstive_path
+    return sensitive_path

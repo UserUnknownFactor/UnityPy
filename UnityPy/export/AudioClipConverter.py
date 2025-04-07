@@ -1,15 +1,46 @@
+from __future__ import annotations
+
 import ctypes
 import os
 import platform
+from typing import TYPE_CHECKING, Dict, Union
+
 from UnityPy.streams import EndianBinaryWriter
 
-# pyfmodex loads the dll/so/dylib on import
-# so we have to adjust the environment vars
-# before importing it
+from ..helpers.ResourceReader import get_resource_data
+
+try:
+    import numpy as np
+except ImportError:
+    np = None
+    import struct
+
+if TYPE_CHECKING:
+    from ..classes import AudioClip
+# pyfmodex loads the dll/so/dylib on import so we have to adjust 
+# the environment vars before importing it
 # This is done in import_pyfmodex()
 # which will replace the global pyfmodex var
 pyfmodex = None
 NO_MODEX = False
+
+
+def get_fmod_path(
+    system: Union["Windows", "Linux", "Darwin"], arch: ["x64", "x86", "arm", "arm64"]
+) -> str:
+    if system == "Darwin":
+        # universal dylib
+        return "lib/FMOD/Darwin/libfmod.dylib"
+
+    if system == "Windows":
+        return f"lib/FMOD/Windows/{arch}/fmod.dll"
+
+    if system == "Linux":
+        if arch == "x64":
+            arch = "x86_64"
+        return f"lib/FMOD/Linux/{arch}/libfmod.so"
+
+    raise NotImplementedError(f"Unsupported system: {system}")
 
 
 def import_pyfmodex():
@@ -17,55 +48,36 @@ def import_pyfmodex():
     if pyfmodex is not None or NO_MODEX:
         return
 
-    ROOT = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
-
     # determine system - Windows, Darwin, Linux, Android
     system = platform.system()
-    if system == "Linux" and "ANDROID_BOOTLOGO" in os.environ:
-        system = "Android"
-    # determine architecture
-    machine = platform.machine()
-    arch = platform.architecture()[0]
 
-    if system in ["Windows", "Darwin"]:
-        if arch == "32bit":
-            arch = "x86"
-        elif arch == "64bit":
-            arch = "x64"
-    elif system == "Linux":
-        # Raspberry Pi and Linux on arm projects
-        if "arm" in machine:
-            if arch == "32bit":
-                arch = "armhf" if machine.endswith("l") else "arm"
-            elif arch == "64bit":
-                # Raise an exception for now; Once it gets supported by FMOD we can just modify the code here
-                pyfmodex = None
-                raise NotImplementedError(
-                    "ARM64 not supported by FMOD.\nUse a 32bit python version."
-                )
-        elif arch == "32bit":
-            arch = "x86"
-        elif arch == "64bit":
-            arch = "x86_64"
-    else:
-        pyfmodex = None
-        raise NotImplementedError(
-            "Couldn't find a correct FMOD library for your system ({system} - {arch})."
-        )
+    # determine architecture
+    arch = platform.architecture()[0]
+    machine = platform.machine()
+
+    if "arm" in machine:
+        arch = "arm"
+    elif "aarch64" in machine:
+        if system == "Linux":
+            arch = "arm64"
+        else:
+            arch = "arm"
+    elif arch == "32bit":
+        arch = "x86"
+    elif arch == "64bit":
+        arch = "x64"
+
+    fmod_rel_path = get_fmod_path(system, arch)
+    fmod_path = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.realpath(__file__))), fmod_rel_path
+    )
+    os.environ["PYFMODEX_DLL_PATH"] = fmod_path
 
     # build path and load library
-    LIB_PATH = os.path.join(ROOT, "lib", "FMOD", system, arch)
-
     # prepare the environment for pyfmodex
-    if system == "Windows":
-        # register fmod.dll, so that windll.fmod in pyfmodex can find it
-        os.environ["PYFMODEX_DLL_PATH"] = os.path.join(LIB_PATH, "fmod.dll")
-    else:
-        ext = "dylib" if system == "Darwin" else "so"
-        os.environ["PYFMODEX_DLL_PATH"] = os.path.join(LIB_PATH, f"libfmod.{ext}")
-
-        # hotfix ctypes for pyfmodex for non windows
-        ctypes.windll = getattr(ctypes, "windll", None)
+    if system != "Windows":
+        # hotfix ctypes for pyfmodex for non windows systems
+        ctypes.windll = None
 
     try:
         import pyfmodex
@@ -74,31 +86,42 @@ def import_pyfmodex():
 
 
 
-def extract_audioclip_samples(audio) -> dict:
+def extract_audioclip_samples(
+    audio: AudioClip, convert_pcm_float: bool = True
+) -> Dict[str, bytes]:
     """extracts all the samples from an AudioClip
     :param audio: AudioClip
     :type audio: AudioClip
     :return: {filename : sample(bytes)}
     :rtype: dict
     """
-    if not audio.m_AudioData:
-        # eg. StreamedResource not available
-        return {}
+    if audio.m_AudioData:
+        audio_data = audio.m_AudioData
+    else:
+        resource = audio.m_Resource
+        audio_data = get_resource_data(
+            resource.m_Source,
+            audio.object_reader.assets_file,
+            resource.m_Offset,
+            resource.m_Size,
+        )
 
-    magic = memoryview(audio.m_AudioData)[:8]
+    magic = memoryview(audio_data)[:8]
     if magic[:4] == b"OggS":
-        return {f"{audio.m_Name}.ogg": audio.m_AudioData}
+        return {f"{audio.m_Name}.ogg": audio_data}
     elif magic[:4] == b"RIFF":
-        return {f"{audio.m_Name}.wav": audio.m_AudioData}
+        return {f"{audio.m_Name}.wav": audio_data}
     elif magic[4:8] == b"ftyp":
-        return {f"{audio.m_Name}.m4a": audio.m_AudioData}
-    return dump_samples(audio)
+        return {f"{audio.m_Name}.m4a": audio_data}
+    return dump_samples(audio, audio_data, convert_pcm_float)
 
 
-def dump_samples(clip):
-
-    import_pyfmodex()
-    if pyfmodex is None or NO_MODEX:
+def dump_samples(
+    clip: AudioClip, audio_data: bytes, convert_pcm_float: bool = True
+) -> Dict[str, bytes]:
+    if pyfmodex is None:
+        import_pyfmodex()
+    if not pyfmodex:
         return {}
 
     # init system
@@ -106,10 +129,10 @@ def dump_samples(clip):
     system.init(clip.m_Channels, pyfmodex.flags.INIT_FLAGS.NORMAL, None)
 
     sound = system.create_sound(
-        bytes(clip.m_AudioData),
+        bytes(audio_data),
         pyfmodex.flags.MODE.OPENMEMORY,
         exinfo=pyfmodex.structure_declarations.CREATESOUNDEXINFO(
-            length=clip.m_Size,
+            length=len(audio_data),
             numchannels=clip.m_Channels,
             defaultfrequency=clip.m_Frequency,
         ),
@@ -119,11 +142,11 @@ def dump_samples(clip):
     samples = {}
     for i in range(sound.num_subsounds):
         if i > 0:
-            filename = "%s-%i.wav" % (clip.name, i)
+            filename = "%s-%i.wav" % (clip.m_Name, i)
         else:
-            filename = "%s.wav" % clip.name
+            filename = "%s.wav" % clip.m_Name
         subsound = sound.get_subsound(i)
-        samples[filename] = subsound_to_wav(subsound)
+        samples[filename] = subsound_to_wav(subsound, convert_pcm_float)
         subsound.release()
 
     sound.release()
@@ -131,35 +154,67 @@ def dump_samples(clip):
     return samples
 
 
-def subsound_to_wav(subsound):
+def subsound_to_wav(subsound, convert_pcm_float: bool = True) -> bytes:
     # get sound settings
-    length = subsound.get_length(pyfmodex.enums.TIMEUNIT.PCMBYTES)
+    sound_format = subsound.format.format
+    sound_data_length = subsound.get_length(pyfmodex.enums.TIMEUNIT.PCMBYTES)
     channels = subsound.format.channels
     bits = subsound.format.bits
     sample_rate = int(subsound.default_frequency)
 
-    # write to buffer
+    if sound_format in [
+        pyfmodex.enums.SOUND_FORMAT.PCM8,
+        pyfmodex.enums.SOUND_FORMAT.PCM16,
+        pyfmodex.enums.SOUND_FORMAT.PCM24,
+        pyfmodex.enums.SOUND_FORMAT.PCM32,
+    ]:
+        audio_format = 1
+        wav_data_length = sound_data_length
+        convert_pcm_float = False
+    elif sound_format == pyfmodex.enums.SOUND_FORMAT.PCMFLOAT:
+        if convert_pcm_float:
+            audio_format = 1
+            bits = 16
+            wav_data_length = sound_data_length // 2
+        else:
+            audio_format = 3
+            wav_data_length = sound_data_length
+    else:
+        raise NotImplementedError("Sound format " + sound_format + " is not supported.")
+
     writer = EndianBinaryWriter(endian="<")
     # riff chucnk
     writer.write(b"RIFF")
-    writer.write_int(length + 36)  # sizeof(FmtChunk) + sizeof(RiffChunk) + length
+    # sizeof(FmtChunk) + sizeof(RiffChunk) + length
+    writer.write_int(wav_data_length + 36)
     writer.write(b"WAVE")
     # fmt chunck
     writer.write(b"fmt ")
     writer.write_int(16)  # sizeof(FmtChunk) - sizeof(RiffChunk)
-    writer.write_short(1)
+    writer.write_short(audio_format)
     writer.write_short(channels)
     writer.write_int(sample_rate)
     writer.write_int(sample_rate * channels * bits // 8)
     writer.write_short(channels * bits // 8)
     writer.write_short(bits)
-    # data chunck
-    writer.write(b"data")
-    writer.write_int(length)
-    # data
-    lock = subsound.lock(0, length)
-    for ptr, length in lock:
-        ptr_data = ctypes.string_at(ptr, length.value)
+
+    # data chunk - sub chunk 2
+    writer.write(b"data")  # sub chunk 2 id
+    writer.write_int(wav_data_length)  # sub chunk 2 size
+    # sub chunk 2 data
+    lock = subsound.lock(0, sound_data_length)
+    for ptr, sound_data_length in lock:
+        ptr_data = ctypes.string_at(ptr, sound_data_length.value)
+        if convert_pcm_float:
+            if np is not None:
+                ptr_data = np.frombuffer(ptr_data, dtype=np.float32)
+                ptr_data = (ptr_data * 2**15).astype(np.int16).tobytes()
+            else:
+                ptr_data = struct.unpack("<%df" % (len(ptr_data) // 4), ptr_data)
+                ptr_data = struct.pack(
+                    "<%dh" % len(ptr_data), *[int(f * 2**15) for f in ptr_data]
+                )
         writer.write(ptr_data)
     subsound.unlock(*lock)
+
     return writer.save()

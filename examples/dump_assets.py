@@ -10,7 +10,7 @@ from UnityPy.helpers.TypeTreeHelper import TypeTreeNode
 from tqdm import tqdm
 import json
 
-TYPES = [CID.TextAsset, CID.MonoBehaviour, CID.Texture2D, CID.Shader, CID.VideoClip]
+TYPES = [CID.Texture2D, CID.TextAsset, CID.MonoBehaviour, CID.Shader, CID.VideoClip]
 BUILD_SCENE_TREE = True
 
 ROOT = os.path.abspath(os.getcwd()) # base directory
@@ -71,9 +71,10 @@ def main():
         am.ignore_dir_lvls = 2
         if BUILD_SCENE_TREE:
             am.process(export_obj, ['GameObject'])
-            with open(file_name + "_scenetree.txt", "w", encoding="utf-8") as st:
-                for line in parent_root.print_tree():
-                    st.write(line + '\n')
+            lines = [line for line in parent_root.print_tree() if line]
+            if lines:
+                with open(file_name+"_scenetree.txt", "w", encoding="utf-8") as st:
+                    st.write('\n'.join(lines))
 
         if hasattr(asset, "get_filtered_assets"):
             for item in tqdm(list(asset.get_filtered_assets(TYPES))):
