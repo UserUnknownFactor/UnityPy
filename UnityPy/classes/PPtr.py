@@ -47,12 +47,9 @@ class PPtr:
         self._obj = None
 
     def __getitem__(self, item):
-        if item in ["file_id", "m_FileID"]:
-            return self.m_FileID
-        if item in ["path_id", "m_PathID"]:
-            return self.m_PathID
-        if item in ["index", "m_Index"]:
-            return self.m_Index
+        if item in ["file_id", "m_FileID"]: return self.m_FileID
+        elif item in ["path_id", "m_PathID"]: return self.m_PathID
+        elif item in ["index", "m_Index"]: return self.m_Index
         return getattr(self, item)
 
     def __repr__(self):
@@ -67,11 +64,14 @@ class PPtr:
 
     def get_obj(self):
         global WARNED_NOTFOUND
-        if self.m_PathID != 0 and self._obj != None:
+
+        if self._obj != None and self.m_PathID != 0:
             return self._obj
-        manager = None
+
         if self.m_PathID == 0:
             return None
+
+        manager = None
         if self.m_FileID == 0:
             manager = self.assets_file
 

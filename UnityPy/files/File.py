@@ -61,7 +61,7 @@ class File(object):
                 yield f
 
     def get_filtered_assets(self, obj_types=[]):
-        if len(obj_types) == 0:
+        if not obj_types:
             return self.get_objects()
         if isinstance(self, (BundleFile.BundleFile, WebFile.WebFile)):
             for f in self.files:

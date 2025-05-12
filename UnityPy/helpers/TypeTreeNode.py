@@ -52,6 +52,13 @@ class TypeTreeNode(object):
         if (self.m_Level is None or self.m_Type is None or self.m_Name is None):
             raise ValueError("TypeTreeNode must have level, name and type")
 
+    def __getitem__(self, item):
+        if item == "m_Name": return self.m_Name
+        elif item == "m_Level": return self.m_Level
+        elif item == "m_Type": return self.m_Type
+        elif item == "m_MetaFlag": return self.m_MetaFlag
+        return getattr(self, item)
+
     def __repr__(self):
         return f"{' ' * self.m_Level}<TypeTreeNode({self.m_Level} {self.m_Type} {self.m_Name})>"
 

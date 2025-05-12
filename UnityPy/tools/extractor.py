@@ -314,7 +314,7 @@ def crawl_obj(obj: Object, ret: Optional[dict] = None) -> Dict[int, Union[Object
         ret = {}
 
     if isinstance(obj, PPtr):
-        if obj.path_id == 0 and obj.file_id == 0 and obj.index == -2:
+        if obj.m_PathID == 0 and obj.m_FileID == 0 and obj.m_Index == -2:
             return ret
         try:
             obj = obj.read()

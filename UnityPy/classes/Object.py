@@ -10,7 +10,7 @@ class Object(object):
     def __init__(self, reader: ObjectReader):
         self.reader = reader
         self.type = reader.type
-        self.path_id = reader.path_id
+        self.m_PathID = reader.path_id
         self.version = reader.version
         self.build_type = reader.build_type
         self.platform = reader.platform
@@ -22,8 +22,8 @@ class Object(object):
             self._object_hide_flags = reader.read_u_int()
 
         self.container = (
-            self.assets_file._container[self.path_id]
-            if self.type != ClassIDType.AssetBundle and self.path_id in self.assets_file._container
+            self.assets_file._container[self.m_PathID]
+            if self.type != ClassIDType.AssetBundle and self.m_PathID in self.assets_file._container
             else None
         )
 
@@ -54,7 +54,7 @@ class Object(object):
                 return {key: class_to_dict(val) for key, val in value.items()}
             elif hasattr(value, "__dict__"):
                 if isinstance(value, PPtr):
-                    return {"m_FileID": value.file_id, "m_PathID": value.path_id}
+                    return {"m_FileID": value.m_FileID, "m_PathID": value.m_PathID}
                 return {
                     key: class_to_dict(val)
                     for key, val in value.__dict__.items()
@@ -102,31 +102,31 @@ class Object(object):
         return getattr(self, key, default)
 
     def __repr__(self):
-        return f"<{self.__class__.__name__} path_id={self.path_id}>"
+        return f"<{self.__class__.__name__} path_id={self.m_PathID}>"
 
     def __hash__(self):
         if self.assets_file and hasattr(self.assets_file, "name"):
-            return hash((self.assets_file.name, self.path_id))
-        return hash(self.path_id)
+            return hash((self.assets_file.name, self.m_PathID))
+        return hash(self.m_PathID)
 
     def __eq__(self, other):
         same_file = True
         if self.assets_file and other.assets_file and hasattr(self.assets_file, "name") and hasattr(other.assets_file, "name"):
             same_file = (self.assets_file.name == other.assets_file.name)
         if isinstance(other, Object):
-            return self.path_id == other.path_id and same_file
+            return self.m_PathID == other.m_PathID and same_file
         elif isinstance(other, int):
-            return self.path_id == other and same_file
+            return self.m_PathID == other and same_file
         return False
 
 
 class NodeHelper:
     def __init__(self, data, assets_file):
         if "m_PathID" in data and "m_FileID" in data:
-            # used to make pointers directly useable
-            self.file_id = data["m_FileID"]
-            self.path_id = data["m_PathID"]
-            self.index = data.get("m_Index", -2)
+            # used to make pointers directly usable
+            self.m_FileID = data["m_FileID"]
+            self.m_PathID = data["m_PathID"]
+            self.m_Index = data.get("m_Index", -2)
             self.assets_file = assets_file
             self._obj = None
             self.__class__ = PPtr
@@ -155,7 +155,7 @@ class NodeHelper:
                 if isinstance(val, NodeHelper)
                 else [dump(item) for item in val]
                 if isinstance(val, list)
-                else {"m_FileID": val.file_id, "m_PathID": val.path_id}
+                else {"m_FileID": val.m_FileID, "m_PathID": val.m_PathID}
                 if isinstance(val, PPtr)
                 else [x for x in val]
                 if isinstance(val, (bytearray, bytes))
