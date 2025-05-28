@@ -350,6 +350,8 @@ def read_managed_ref_registry(reader: Union["ObjectReader", "EndianBinaryReader"
     value['RefIds'] = []
     while refid_count > 0:
         rid = None
+        if reader.Position >= reader.Length:
+            raise TypeTreeError("End of stream before enough RefId nodes", value)
         if version > 1:
             rid = reader.read_long()
             #rid_text = f"<rID:{rid}>"
@@ -357,7 +359,7 @@ def read_managed_ref_registry(reader: Union["ObjectReader", "EndianBinaryReader"
         ref_ns = reader.read_aligned_string()
         ref_asm = reader.read_aligned_string()
         ref_nodes = None
-        if rid is not None and rid >= 0 and rid < (1 << 32):
+        if rid is not None and not ref_class and rid >= 0 and rid < (1 << 32):
             ref_class = ClassIDType(rid).name
         if all_trees and ref_class and ref_class in all_trees:
             ref_nodes = all_trees[ref_class]
@@ -526,7 +528,7 @@ def write_managed_ref_registry(value, writer: EndianBinaryWriter,
         writer.write_aligned_string(item["type"]["asm"])
         ref_nodes = None
         ref_class = item["type"]["class"]
-        if rid is not None and rid >= 0 and rid < (1 << 32):
+        if rid is not None and not ref_class and rid >= 0 and rid < (1 << 32):
             ref_class = ClassIDType(rid).name
         if all_trees and ref_class and ref_class in all_trees:
             ref_nodes = all_trees[ref_class]
