@@ -213,6 +213,8 @@ class ObjectReader:
             non_m = name[2:].lower()
             if hasattr(self.reader, non_m):
                 return getattr(self.reader, non_m)
+            else:
+                return None
         raise AttributeError(f"{self.__class__.__name__} has not attribute {name}")
 
     def __repr__(self):

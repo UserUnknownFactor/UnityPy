@@ -1,4 +1,5 @@
-﻿CommonString = {
+﻿# format is `offset: name` separated by \0s so each string is +1 to the previous length
+CommonString = {
     0: "AABB",
     5: "AnimationClip",
     19: "AnimationCurve",

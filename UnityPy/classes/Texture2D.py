@@ -8,122 +8,6 @@ from io import BufferedIOBase, RawIOBase, IOBase
 
 
 class Texture2D(Texture):
-    @property
-    def name(self):
-        return self.m_Name
-
-    @property
-    def image(self):
-        return Texture2DConverter.get_image_from_texture2d(self)
-
-    @image.setter
-    def image(self, img):  # simple alias
-        self.set_image(img)
-
-    def mipmapped_dims(self):
-        return ()
-
-    def check_image_valid(self, img: Image.Image):
-        if not isinstance(img, Image.Image):
-            return False
-        bad_width = img.size[0] != self.m_Width
-        bad_height = img.size[1] != self.m_Height
-        if bad_width or bad_height:
-            print_error(f"Image {self.name} must have the same dimensions as original Texture2D " + (
-                f"{' mipmaps: ' + str(self.m_MipCount) + '; ' if hasattr(self, 'm_MipCount') else ''}") + (
-                f"{img.size[0]} != {self.m_Width}; " if bad_width else "") + (
-                f"{img.size[1]} != {self.m_Height}" if bad_height else ""))
-            return False
-        return True
-
-    @property
-    def image_data(self):
-        if not self._image_data and self.m_StreamData is not None:
-            if not self.m_StreamData.size:
-                self._image_data = b''
-            else:
-                self._image_data = get_resource_data(
-                    self.m_StreamData.path,
-                    self.assets_file,
-                    self.m_StreamData.offset,
-                    self.m_StreamData.size,
-                )
-        return self._image_data
-
-    def reset_streamdata(self):
-        if not self.m_StreamData:
-            return
-        self.m_StreamData.offset = 0
-        self.m_StreamData.size = 0
-        self.m_StreamData.path = ""
-
-    @image_data.setter
-    def image_data(self, data: bytes):
-        self._image_data = bytes(data) if data else b''
-        # img.width * img.height * ( channel count = len(img.getbands()) )
-        self.m_CompleteImageSize = len(self._image_data)
-        # prefer writing to cab if possible, but...
-        self.reset_streamdata()
-
-    def set_image(
-        self,
-        img,
-        in_cab: bool = False,
-        mipmap_count: int = 1,
-        mipmaps: tuple = (),
-    ) -> bool:
-        """Sets Texture2D image, set its corresponding m_ attributes to
-           its dimensions and the desired output texture format
-        """
-        if img is None:
-            print_error("No image provided")
-            return False
-        elif (
-            isinstance(img, str)
-            or isinstance(img, BufferedIOBase)
-            or isinstance(img, RawIOBase)
-            or isinstance(img, IOBase)
-        ):
-            img = Image.open(img)
-
-        if not self.check_image_valid(img):
-            return False
-
-        if mipmap_count > 1:
-            if img.mode == "RGBA" or "transparency" in img.info:
-                self.m_TextureFormat = TextureFormat.RGBA32
-            else:
-                self.m_TextureFormat = TextureFormat.RGB24
-
-        # NOTE: no need for the texture meta parameters since we have its attributes
-        img_data, tex_format = Texture2DConverter.image_to_texture2d(img, self.m_TextureFormat)
-        if mipmap_count > 1:
-            width = self.m_Width
-            height = self.m_Height
-            re_img = img
-            for i in range(mipmap_count - 1):
-                width //= 2
-                height //= 2
-                if width < 4 or height < 4:
-                    mipmap_count = i + 1
-                    break
-                if mipmaps and i < len(mipmaps):
-                    re_img = Image.open(mipmaps[i])
-                else:
-                    re_img = re_img.resize((width, height), Image.BILINEAR)
-                img_data += Texture2DConverter.image_to_texture2d(
-                    re_img, self.m_TextureFormat
-                )[0]
-
-        if self.version[:2] < (5, 2):  # 5.2 down
-            self.m_MipMap = mipmap_count > 1
-        else:
-            self.m_MipCount = mipmap_count
-
-        self.image_data = img_data
-        self.m_TextureFormat = tex_format
-        return True
-
     def __init__(self, reader):
         super().__init__(reader=reader)
         version = self.version
@@ -243,6 +127,121 @@ class Texture2D(Texture):
 
         self.set_raw_data(writer)
 
+    @property
+    def name(self):
+        return self.m_Name
+
+    @property
+    def image(self):
+        return Texture2DConverter.get_image_from_texture2d(self)
+
+    @image.setter
+    def image(self, img):  # simple alias
+        self.set_image(img)
+
+    def mipmapped_dims(self):
+        return ()
+
+    def check_image_valid(self, img: Image.Image):
+        if not isinstance(img, Image.Image):
+            return False
+        bad_width = img.size[0] != self.m_Width
+        bad_height = img.size[1] != self.m_Height
+        if bad_width or bad_height:
+            print_error(f"Image {self.name} must have the same dimensions as original Texture2D " + (
+                f"{' mipmaps: ' + str(self.m_MipCount) + '; ' if hasattr(self, 'm_MipCount') else ''}") + (
+                f"{img.size[0]} != {self.m_Width}; " if bad_width else "") + (
+                f"{img.size[1]} != {self.m_Height}" if bad_height else ""))
+            return False
+        return True
+
+    @property
+    def image_data(self):
+        if not self._image_data and self.m_StreamData is not None:
+            if not self.m_StreamData.size:
+                self._image_data = b''
+            else:
+                self._image_data = get_resource_data(
+                    self.m_StreamData.path,
+                    self.assets_file,
+                    self.m_StreamData.offset,
+                    self.m_StreamData.size,
+                )
+        return self._image_data
+
+    def reset_streamdata(self):
+        if not self.m_StreamData:
+            return
+        self.m_StreamData.offset = 0
+        self.m_StreamData.size = 0
+        self.m_StreamData.path = ""
+
+    @image_data.setter
+    def image_data(self, data: bytes):
+        self._image_data = bytes(data) if data else b''
+        # img.width * img.height * ( channel count = len(img.getbands()) )
+        self.m_CompleteImageSize = len(self._image_data)
+        # prefer writing to cab if possible, but...
+        self.reset_streamdata()
+
+    def set_image(
+        self,
+        img,
+        in_cab: bool = False,
+        mipmap_count: int = 1,
+        mipmaps: tuple = (),
+    ) -> bool:
+        """Sets Texture2D image, set its corresponding m_ attributes to
+           its dimensions and the desired output texture format
+        """
+        if img is None:
+            print_error("No image provided")
+            return False
+        elif (
+            isinstance(img, str)
+            or isinstance(img, BufferedIOBase)
+            or isinstance(img, RawIOBase)
+            or isinstance(img, IOBase)
+        ):
+            img = Image.open(img)
+
+        if not self.check_image_valid(img):
+            return False
+
+        if mipmap_count > 1:
+            if img.mode == "RGBA" or "transparency" in img.info:
+                self.m_TextureFormat = TextureFormat.RGBA32
+            else:
+                self.m_TextureFormat = TextureFormat.RGB24
+
+        # NOTE: no need for the texture meta parameters since we have its attributes
+        img_data, tex_format = Texture2DConverter.image_to_texture2d(img, self.m_TextureFormat)
+        if mipmap_count > 1:
+            width = self.m_Width
+            height = self.m_Height
+            re_img = img
+            for i in range(mipmap_count - 1):
+                width //= 2
+                height //= 2
+                if width < 4 or height < 4:
+                    mipmap_count = i + 1
+                    break
+                if mipmaps and i < len(mipmaps):
+                    re_img = Image.open(mipmaps[i])
+                else:
+                    re_img = re_img.resize((width, height), Image.BILINEAR)
+                img_data += Texture2DConverter.image_to_texture2d(
+                    re_img, self.m_TextureFormat
+                )[0]
+
+        if self.version[:2] < (5, 2):  # 5.2 down
+            self.m_MipMap = mipmap_count > 1
+        else:
+            self.m_MipCount = mipmap_count
+
+        self.image_data = img_data
+        self.m_TextureFormat = tex_format
+        return True
 
 class StreamingInfo:
     offset: int

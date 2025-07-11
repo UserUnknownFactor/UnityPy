@@ -135,13 +135,15 @@ class File(object):
                 a_name = self.dump(cur_reader, embedded_file)
                 node_reader = EndianBinaryReader(a_name)
             else:
-                if not name.lower().endswith((".ress", ".resource")):
+                if not name.lower().endswith((".ress", ".resource")) and cur_reader:
                     node_reader = EndianBinaryReader(
                         cur_reader.read(size),
                         offset=(cur_reader.BaseOffset + embedded_file.offset)
                     )
                 else:
                     node_reader = cur_reader
+            if not node_reader:
+                return
             f = ImportHelper.parse_file(
                 node_reader, self, name, is_dependency=self.is_dependency
             )

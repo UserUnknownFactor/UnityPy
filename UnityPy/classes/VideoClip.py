@@ -12,14 +12,15 @@ from .PPtr import PPtr
 
 
 class StreamedResource:
-    def __init__(self, reader: "ObjectReader"):
+    def __init__(self, reader: "ObjectReader", version):
         self.m_Source = reader.read_aligned_string()
-        self.m_Offset = reader.read_int()
+        self.m_Offset = reader.read_u_long()
         self.m_Size = reader.read_u_long()
 
-    def save(self, writer: "EndianBinaryWriter" = None):
+    def save(self, writer: "EndianBinaryWriter" = None, version=(2017,)):
         writer.write_aligned_string(self.m_Source)
         writer.write_int(self.m_Offset)
+        writer.write_u_long(self.m_Offset)
         writer.write_u_long(self.m_Size)
 
 
@@ -45,7 +46,7 @@ class VideoClip(NamedObject):
         self.m_AudioLanguage = reader.read_array(reader.read_aligned_string)
         if self.version[0] >= 2020:  # 2020.1 and up
             self.m_VideoShaders = reader.read_array(partial(PPtr, reader))
-        self.m_ExternalResources = StreamedResource(reader)
+        self.m_ExternalResources = StreamedResource(reader, version=version)
         self.m_HasSplitAlpha = reader.read_bool()
         if version > (2020, 1, 0, 19):
             self.m_sRGB = reader.read_bool()
@@ -72,9 +73,9 @@ class VideoClip(NamedObject):
         writer.write_array(writer.write_u_int, self.m_AudioSampleRate)
         #writer.align_stream()
         writer.write_array(writer.write_aligned_string, self.m_AudioLanguage)
-        if self.version[0] >= 2020:
+        if version[0] >= 2020:
             (writer.write_u_int(len(self.m_VideoShaders.keys())), [item.save(writer) for item in self.m_VideoShaders])
-        self.m_ExternalResources.save(writer)
+        self.m_ExternalResources.save(writer, version=version)
         writer.write_bool(self.m_HasSplitAlpha)
         if version > (2020, 1, 0, 19):
             writer.write_bool(self.m_sRGB)

@@ -285,7 +285,8 @@ def read_value(nodes: List[TypeTreeNode], reader: "ObjectReader",
                     vector = get_subtree_at(nodes, i)
                     i.value += slice_len(vector) - 1
                     size = reader.read_int()
-                    sanity_check(f"read_value(): size of Vector", size)
+                    if True or config.DEBUG_TYPETREES:
+                        sanity_check(f"read_value(): size of Vector", size, max_value=16777216) # 4096x4096; needed?
                     value = [None] * size
                     for i in range(size):
                         value[i] = read_value(nodes[vector], reader, c_uint32(3), all_trees, value_ref)

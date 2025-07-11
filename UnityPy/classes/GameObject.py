@@ -55,7 +55,7 @@ class GameObject(EditorExtension):
             self.m_IsActive = reader.read_boolean()
 
     def __key(self):
-        return (self.assets_file, self.path_id)
+        return (self.assets_file, self.m_PathID)
 
     def __hash__(self):
         return hash(self.__key())

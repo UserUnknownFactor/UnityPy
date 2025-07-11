@@ -17,7 +17,7 @@ DEBUG =  is_true_env('DEBUG', 'True') # Toggles debugging branches (useful if me
 #  unless we provide the TypeTrees by ourselves.
 SERIALIZED_FILE_PARSE_TYPETREE = is_true_env('SERIALIZED_FILE_PARSE_TYPETREE')
 
-BIG_OBJECT_GUARD = 0 #int(2e9) # 0 or don't try to unpack bigger objects (bytes)
+BIG_OBJECT_GUARD = int(3e9) # 0 or don't try to unpack bigger objects (bytes)
 
 ENABLE_TYPETREEHELPER_FALLBACK = is_true_env('ENABLE_TYPETREEHELPER_FALLBACK') # Fallback to TypeTreeHelper parsing in asset bundles
 

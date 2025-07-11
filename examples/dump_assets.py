@@ -11,6 +11,7 @@ from tqdm import tqdm
 import json
 
 TYPES = [CID.Texture2D, CID.TextAsset, CID.MonoBehaviour, CID.Shader, CID.VideoClip]
+
 BUILD_SCENE_TREE = True
 
 ROOT = os.path.abspath(os.getcwd()) # base directory
@@ -19,8 +20,9 @@ DST = os.path.join(ROOT, "output") # destination folder
 ASSETS = glob(
     os.path.join(ROOT,"globalmanagers")) + glob(
     os.path.join(ROOT,"*.assets")) + glob(
-    os.path.join(ROOT,"StreamingAssets\\aa\\StandaloneWindows64\\*.bundle")) + glob(
     os.path.join(ROOT,"level*")) + glob(
+    os.path.join(ROOT,"StreamingAssets\\aa\\StandaloneWindows64\\**\\*.bundle"), recursive=True) + glob(
+    os.path.join(ROOT,"StreamingAssets\\aa\\Windows\\StandaloneWindows64\\**\\*.bundle"), recursive=True) + glob(
     os.path.join(ROOT,"data.unity3d")) # sources
 
 ASSEMBLY_TREES = dict()
@@ -64,7 +66,7 @@ def main():
                     open(file_name, 'rb'), crypto_func=get_decryption_func(key)
                 ), name=file_name)
         else:
-            asset = am.load_file(file_name, name=file_name)
+            asset = am.load_file(file_name, name=file_name)#, dump=True)
         if asset is None:
             continue
 
@@ -97,6 +99,7 @@ def export_obj(obj, asset: str, **kwargs) -> list:
     objfmt = obj.type
 
     data = obj.read()
+
     name = "unnamed asset"
     fbase = os.path.basename(asset)
     try:
@@ -145,6 +148,20 @@ def export_obj(obj, asset: str, **kwargs) -> list:
 
         parent.add_child(current_node)
 
+    elif objfmt == CID.VideoClip:
+        fp = f"{make_path(DST, 'VideoClip', os.path.split(fname)[0], objname).strip()}.mp4"
+        if not os.path.isfile(fp):
+            try:
+                video = data.video
+                if len(video):
+                    with open(fp, "wb") as f:
+                        f.write(video)
+            except Exception as e:
+                if data.name is not None:
+                    objfmt = data.name
+                print(repr(e), "in file:", objname, "object type:", objfmt)
+        return [obj.path_id]
+
     elif objfmt == CID.TextAsset:
         if data.script:
             fp = f"{make_path(DST, 'TextAsset', os.path.split(fname)[0], objname)}.txt"
@@ -160,20 +177,6 @@ def export_obj(obj, asset: str, **kwargs) -> list:
             except Exception as e:
                 if data.m_TextureFormat.name is not None:
                     objfmt = data.m_TextureFormat.name
-                print(repr(e), "in file:", objname, "object type:", objfmt)
-        return [obj.path_id]
-
-    elif objfmt == CID.VideoClip:
-        fp = f"{make_path(DST, 'VideoClip', os.path.split(fname)[0], objname).strip()}.mp4"
-        if not os.path.isfile(fp):
-            try:
-                with open(fp, "wb") as f:
-                    video = data.video
-                    if len(video):
-                        f.write(video)
-            except Exception as e:
-                if data.name is not None:
-                    objfmt = data.name
                 print(repr(e), "in file:", objname, "object type:", objfmt)
         return [obj.path_id]
 
@@ -206,12 +209,13 @@ def export_obj(obj, asset: str, **kwargs) -> list:
             pass
         else:
             script = data.m_Script.read()
-            cname = script.m_ClassName
+            if script:
+                cname = script.m_ClassName
             #if "TextMeshProUGUI" not in cname:
                 #return [obj.path_id]
             if not script:
                 pass
-            elif ASSEMBLY_TREES and cname in ASSEMBLY_TREES:
+            elif ASSEMBLY_TREES and cname and cname in ASSEMBLY_TREES:
                 nodes = ASSEMBLY_TREES[cname]
                 try:
                     tree = obj.read_typetree(nodes)
@@ -222,7 +226,7 @@ def export_obj(obj, asset: str, **kwargs) -> list:
                     #tree = e.nodes
                     #objname += "-broken"
                     pass
-            if (is_raw or (ASSEMBLY_TREES and cname not in ASSEMBLY_TREES)) and obj.serialized_type.nodes:
+            if (is_raw or not cname or (ASSEMBLY_TREES and cname not in ASSEMBLY_TREES)) and obj.serialized_type.nodes:
                 # only try embedded nodes as the last resort since they have unknown quality
                 try:
                     tree = obj.read_typetree()

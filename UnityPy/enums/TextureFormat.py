@@ -2,6 +2,7 @@ from enum import IntEnum
 
 
 class TextureFormat(IntEnum):
+    Empty = 0
     Alpha8 = 1
     ARGB4444 = 2
     RGB24 = 3
