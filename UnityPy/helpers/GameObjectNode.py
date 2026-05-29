@@ -50,9 +50,9 @@ class GameObjectNode(object):
 
     def find_child(self, path_id):
         if not path_id: return None
-        if self.content.m_pathID == self.m_pathID: return self
+        if self.content.m_PathID == self.m_PathID: return self
         for node in self.attachments:
-            if node.m_pathID == path_id:
+            if node.m_PathID == path_id:
                 return node
         for node in self.children:
             if len(node.children):
@@ -65,7 +65,7 @@ class GameObjectNode(object):
         contents = self.attachments
         pointers = [self.TEE] * (len(contents) - 1) + ([self.LAST] if not len(self.children) else [self.TEE])
         for pointer, node in zip(pointers, contents):
-            yield prefix + pointer + node.type.name + f" (m_fileID: {node.m_fileID}; m_pathID: {node.m_pathID})"
+            yield prefix + pointer + node.type.name + f" (m_FileID: {node.m_FileID}; m_PathID: {node.m_PathID})"
         contents = self.children
         pointers = [self.TEE] * (len(contents) - 1) + [self.LAST]
         for pointer, node in zip(pointers, contents):

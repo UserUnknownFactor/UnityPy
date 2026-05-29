@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, Generic, Optional, TypeVar, cast
-from attr import define
 from ..enums import ClassIDType
 
 T = TypeVar("T")

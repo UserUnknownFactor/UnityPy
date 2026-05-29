@@ -6,11 +6,13 @@ from .PPtr import PPtr, save_ptr
 class BuildSettings(Object):
     def __init__(self, reader):
         super().__init__(reader=reader)
+        version = self.version
         self.scenes = reader.read_string_array()
-        self.m_preloadedPlugins = reader.read_string_array()
-        self.m_enabledVRDevices = reader.read_string_array()
-        self.m_buildTags = reader.read_string_array()
-        self.buildGUID = reader.read_bytes(16)
+        self.preloadedPlugins = reader.read_string_array()
+        self.enabledVRDevices = reader.read_string_array()
+        self.buildTags = reader.read_string_array()
+        if version < (2022, 2):
+            self.buildGUID = reader.read_bytes(16)
         self.hasPROVersion = reader.read_boolean()
         self.isNoWatermarkBuild = reader.read_boolean()
         """
@@ -37,12 +39,14 @@ class BuildSettings(Object):
     def save(self, writer: EndianBinaryWriter = None):
         if writer is None:
             writer = EndianBinaryWriter(endian=self.reader.endian)
+        version = self.version
         super().save(writer, intern_call=True)
         writer.write_string_array(self.scenes)
-        writer.write_string_array(self.m_preloadedPlugins)
-        writer.write_string_array(self.m_enabledVRDevices)
-        writer.write_string_array(self.m_buildTags)
-        writer.write_bytes(self.buildGUID)
+        writer.write_string_array(self.preloadedPlugins)
+        writer.write_string_array(self.enabledVRDevices)
+        writer.write_string_array(self.buildTags)
+        if version < (2022, 2):
+            writer.write_bytes(self.buildGUID)
         writer.write_boolean(self.hasPROVersion)
         writer.write_boolean(self.isNoWatermarkBuild)
         """

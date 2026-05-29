@@ -11,7 +11,7 @@ from PIL import Image
 from tqdm import tqdm
 
 ROOT = os.path.abspath(os.getcwd()) # base directory
-TYPES = ["MonoBehaviour", "Texture2D", "TextAsset", "Sprite", "Shader"]
+TYPES = [CID.MonoBehaviour, CID.Texture2D, CID.TextAsset, CID.Sprite, CID.Shader]
 #DST = os.path.join(ROOT, "output") # destination folder
 
 ASSETS = glob(
@@ -127,7 +127,7 @@ def main():
                 by_name = True
             if not fname: return []
             with Image.open(fname) as img:
-                _img = Image.open(img)
+                _img = img
                 if _img.height != data.m_Height or _img.width != data.m_Width:
                      # it's not the same image even if their names are the same
                     return [obj.path_id]

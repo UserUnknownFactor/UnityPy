@@ -1,5 +1,7 @@
 import setuptools
-from UnityPy import __version__ as version
+import re
+with open("UnityPy/__init__.py") as f:
+    version = re.search(r'__version__\s*=\s*"(.*)"', f.read()).group(1)
 
 with open("README.md", "r") as fh:
 	long_description = fh.read()
@@ -32,6 +34,7 @@ setuptools.setup(
 	],
 	install_requires=[
 		# block compression/decompression
+		"etcpak",
 		"lz4", # BundleFile block compression
 		"brotli", # WebFile compression
 		# Texture & Sprite handling
